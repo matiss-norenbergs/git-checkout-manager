@@ -471,36 +471,82 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="160"/>
-                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*" MinWidth="200"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*" MinWidth="120"/>
                     <ColumnDefinition Width="16"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                <TextBlock Grid.Column="0" Text="New Branch:" VerticalAlignment="Center"
-                           FontWeight="SemiBold" Margin="0,0,6,0"
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Clone into:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,0,8,0"/>
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding CloneParentFolder, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center" Padding="5,4"
+                         ToolTip="Folder in which the checkout folder is created"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse…" Margin="6,0,0,0" Padding="10,4"
+                        Command="{Binding BrowseCloneParentCommand}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Folder:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,4,8,0"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
+                         Text="{Binding FolderName, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center" Padding="5,4" Margin="0,4,0,0"
+                         ToolTip="Name of the checkout folder. Generated from the pattern in Settings until you edit it."/>
+                <Button Grid.Row="1" Grid.Column="2" Content="↺" Margin="6,4,0,0" Padding="10,4"
+                        Command="{Binding ResetFolderNameCommand}"
+                        ToolTip="Use automatic name"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3,0,0"
+                           Text="{Binding DestinationPreview}" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding DestinationPreview}" FontSize="12">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasDestinationError}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="New Branch:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,8,8,0"
                            ToolTip="Optional: create and switch to this branch after sparse checkout"/>
-                <TextBox Grid.Column="1"
+                <TextBox Grid.Row="3" Grid.Column="1"
                          Text="{Binding NewBranchName, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalAlignment="Center" Padding="5,4"
+                         VerticalAlignment="Center" Padding="5,4" Margin="0,8,0,0"
                          ToolTip="Optional: appends 'git checkout -b &lt;name&gt;' to the generated script"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3,0,0" FontSize="12"
+                           Text="{Binding NewBranchHint}" TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNewBranchInvalid}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
 
-                <TextBlock Grid.Column="3" Text="Target Folder:" VerticalAlignment="Center"
-                           FontWeight="SemiBold" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="4"
-                         Text="{Binding TargetFolder, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalAlignment="Center" Padding="5,4"
-                         ToolTip="Local path to clone into (optional – leave blank to use the repo name)"/>
-
-                <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="4" Orientation="Vertical"
+                            VerticalAlignment="Top">
                     <CheckBox IsChecked="{Binding InitSubmodules}"
                               ToolTip="Appends 'git submodule update --init --remote --recursive' to the script. Note: --remote updates each submodule to the latest commit on its upstream tracking branch, not the pinned superproject commit.">
                         <TextBlock Text="Initialize submodules" FontSize="12"/>
                     </CheckBox>
                     <CheckBox IsChecked="{Binding KeepWindowOpen}"
-                              Margin="18,0,0,0"
+                              Margin="0,6,0,0"
                               ToolTip="When enabled, the CMD window stays open after the script finishes so you can review output and errors. Disable to close automatically.">
                         <TextBlock Text="Keep CMD window open" FontSize="12"/>
                     </CheckBox>

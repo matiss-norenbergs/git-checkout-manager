@@ -103,8 +103,7 @@ namespace GitSparseManager.Services
         {
             _memoryCache.Clear();
             if (!Directory.Exists(CacheRoot)) return;
-            try { Directory.Delete(CacheRoot, recursive: true); }
-            catch { /* locked files — best effort */ }
+            TryDeleteDirectory(CacheRoot);
         }
 
         // ── Steps ─────────────────────────────────────────────────────────────
@@ -133,15 +132,26 @@ namespace GitSparseManager.Services
         private async Task<(string Sha, bool FilterIgnored)> EnsureObjectsAsync(
             string repoUrl, string branch, string repoDir, GitAuth? auth, CancellationToken ct)
         {
-            if (!Directory.Exists(Path.Combine(repoDir, ".git")))
+            // A clone cancelled part-way leaves .git without a HEAD; start over rather than trust it.
+            if (!File.Exists(Path.Combine(repoDir, ".git", "HEAD")))
             {
+                TryDeleteDirectory(repoDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(repoDir)!);
 
-                var clone = await _gitService.RunAsync(new[]
+                GitResult clone;
+                try
                 {
-                    "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
-                    "--branch", branch, repoUrl, repoDir
-                }, null, auth, ct);
+                    clone = await _gitService.RunAsync(new[]
+                    {
+                        "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
+                        "--branch", branch, repoUrl, repoDir
+                    }, null, auth, ct);
+                }
+                catch
+                {
+                    TryDeleteDirectory(repoDir);
+                    throw;
+                }
 
                 if (clone.ExitCode != 0)
                 {
@@ -236,8 +246,21 @@ namespace GitSparseManager.Services
 
         private static void TryDeleteDirectory(string path)
         {
-            try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
-            catch { /* best effort */ }
+            try
+            {
+                if (!Directory.Exists(path)) return;
+
+                // Git writes pack and object files read-only, which makes Directory.Delete fail part-way.
+                foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                {
+                    var attributes = File.GetAttributes(file);
+                    if ((attributes & FileAttributes.ReadOnly) != 0)
+                        File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+                }
+
+                Directory.Delete(path, recursive: true);
+            }
+            catch { /* locked files — best effort */ }
         }
 
         private static string? FirstLine(string text) =>

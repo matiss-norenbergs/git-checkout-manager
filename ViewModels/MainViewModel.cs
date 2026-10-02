@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows.Data;
 using System.Windows.Threading;
 using System.Windows;
@@ -52,7 +53,9 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private ObservableCollection<Repository> _repositories = new();
         [ObservableProperty] private Repository? _selectedRepository;
         [ObservableProperty] private ObservableCollection<Branch> _branches = new();
-        [ObservableProperty] private Branch? _selectedBranch;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(NewBranchHint))]
+        private Branch? _selectedBranch;
         [ObservableProperty] private string _branchFilterText = string.Empty;
         [ObservableProperty] private string _repositoryFilterText = string.Empty;
 
@@ -67,7 +70,6 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private string _searchFilter = string.Empty;
 
         // ── Output ────────────────────────────────────────────────────────────
-        [ObservableProperty] private string _targetFolder = string.Empty;
         [ObservableProperty] private string _selectedPathsText = string.Empty;
         [ObservableProperty] private string _generatedScript = string.Empty;
 
@@ -83,6 +85,37 @@ namespace GitSparseManager.ViewModels
         private bool _hasValidScript;
 
         [ObservableProperty] private string _newBranchName = string.Empty;
+
+        // ── Destination ───────────────────────────────────────────────────────
+        [ObservableProperty] private string _cloneParentFolder = string.Empty;
+        [ObservableProperty] private string _folderName = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ResetFolderNameCommand))]
+        private bool _isFolderNameAuto = true;
+
+        [ObservableProperty] private string _destinationPreview = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _hasDestinationError;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(NewBranchHint))]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _isNewBranchInvalid;
+
+        // True from a keystroke in New Branch until its git validation has answered.
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _isBranchCheckPending;
+
+        private bool _settingFolderName;
+        private CancellationTokenSource? _branchCheckCts;
+
+        public string NewBranchHint => IsNewBranchInvalid
+            ? "Not a valid branch name"
+            : $"Created locally from {SelectedBranch?.Name ?? "the selected branch"} after checkout. Not pushed.";
 
         /// <summary>Output of the last Manage apply (git warnings). Cleared when the next apply starts.</summary>
         [ObservableProperty]
@@ -203,6 +236,7 @@ namespace GitSparseManager.ViewModels
 
             _appSettings = settingsService.LoadSettings();
             _scriptPanelExpanded = _appSettings.ScriptPanelExpanded;
+            _cloneParentFolder = _appSettings.CloneParentFolder ?? string.Empty;
             InitSubmodules = _appSettings.InitSubmodules;
             KeepWindowOpen = _appSettings.KeepWindowOpen;
             SelectedThemeMode = _appSettings.ThemeMode;
@@ -226,6 +260,7 @@ namespace GitSparseManager.ViewModels
 
             // Ticking a large folder changes thousands of nodes; collapse that into one regeneration.
             TreeNodeViewModel.CheckedChanged += ScheduleRegenerate;
+            UpdateDestination();
             RegenerateScript();
         }
 
@@ -302,9 +337,176 @@ namespace GitSparseManager.ViewModels
             _settingsService.SaveSettings(_appSettings);
         }
 
-        partial void OnNewBranchNameChanged(string value) => ScheduleRegenerate();
+        partial void OnNewBranchNameChanged(string value)
+        {
+            UpdateDestination();
+            ScheduleRegenerate();
+            _ = ValidateNewBranchAsync(value);
+        }
 
-        partial void OnTargetFolderChanged(string value) => ScheduleRegenerate();
+        partial void OnCloneParentFolderChanged(string value)
+        {
+            _appSettings.CloneParentFolder = value ?? string.Empty;
+            _settingsService.SaveSettings(_appSettings);
+            UpdateDestination();
+        }
+
+        partial void OnFolderNameChanged(string value)
+        {
+            if (!_settingFolderName) IsFolderNameAuto = false;
+            UpdateDestination();
+            ScheduleRegenerate();
+        }
+
+        // ── Destination ───────────────────────────────────────────────────────
+
+        internal static string BuildFolderName(string pattern, string? repo, string? newBranch, string? baseBranch)
+        {
+            if (string.IsNullOrWhiteSpace(pattern)) pattern = AppSettings.DefaultFolderNamePattern;
+            var branch = string.IsNullOrWhiteSpace(newBranch) ? baseBranch : newBranch;
+
+            var name = pattern
+                .Replace("{repo}", repo ?? string.Empty)
+                .Replace("{branch}", branch ?? string.Empty)
+                .Replace("{base}", baseBranch ?? string.Empty);
+
+            foreach (var c in new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' })
+                name = name.Replace(c, '-');
+
+            return Regex.Replace(name, "-{2,}", "-").TrimEnd('.', ' ');
+        }
+
+        private static bool IsValidFolderName(string name) =>
+            !string.IsNullOrWhiteSpace(name) &&
+            name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+            name != "." && name != ".." &&
+            !name.EndsWith('.') && !name.EndsWith(' ');
+
+        /// <summary>The settings window changed the pattern; apply it to the automatic name.</summary>
+        private void ApplyFolderNamePattern(string pattern)
+        {
+            _appSettings.FolderNamePattern = pattern;
+            _settingsService.SaveSettings(_appSettings);
+            UpdateDestination();
+        }
+
+        /// <summary>Regenerates the automatic folder name, then refreshes the path preview and its error state.</summary>
+        private void UpdateDestination()
+        {
+            if (IsFolderNameAuto)
+            {
+                var name = SelectedRepository == null
+                    ? string.Empty
+                    : BuildFolderName(_appSettings.FolderNamePattern, SelectedRepository.Name,
+                        NewBranchName.Trim(), SelectedBranch?.Name);
+
+                if (name != FolderName)
+                {
+                    _settingFolderName = true;
+                    try { FolderName = name; }
+                    finally { _settingFolderName = false; }
+                }
+            }
+
+            string? error = null;
+            var path = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(CloneParentFolder))
+                error = "Choose where to clone";
+            else if (!IsValidFolderName(FolderName))
+                error = "Folder name is invalid";
+            else if (CloneParentFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+                error = "Clone location is invalid";
+            else
+            {
+                path = Path.Combine(CloneParentFolder, FolderName);
+                try
+                {
+                    if (File.Exists(path) ||
+                        (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()))
+                        error = "Folder already exists and isn't empty";
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    error = "Folder already exists and isn't empty";
+                }
+            }
+
+            HasDestinationError = error != null;
+            DestinationPreview = error == null
+                ? "→ " + path
+                : path.Length == 0 ? error : $"→ {path} — {error}";
+        }
+
+        [RelayCommand]
+        private void BrowseCloneParent()
+        {
+            var initial = Directory.Exists(CloneParentFolder) ? CloneParentFolder : null;
+            var folder = _dialogService.ShowOpenFolderDialog("Select folder to clone into", initial);
+            if (folder != null) CloneParentFolder = folder;
+        }
+
+        [RelayCommand(CanExecute = nameof(CanResetFolderName))]
+        private void ResetFolderName()
+        {
+            IsFolderNameAuto = true;
+            UpdateDestination();
+            ScheduleRegenerate();
+        }
+
+        private bool CanResetFolderName() => !IsFolderNameAuto;
+
+        // ── New branch validation ─────────────────────────────────────────────
+
+        private async Task ValidateNewBranchAsync(string name)
+        {
+            _branchCheckCts?.Cancel();
+            _branchCheckCts?.Dispose();
+
+            name = name.Trim();
+            if (name.Length == 0)
+            {
+                _branchCheckCts = null;
+                IsNewBranchInvalid = false;
+                IsBranchCheckPending = false;
+                return;
+            }
+
+            var cts = new CancellationTokenSource();
+            _branchCheckCts = cts;
+            IsBranchCheckPending = true;
+
+            try
+            {
+                await Task.Delay(300, cts.Token);
+
+                // A leading dash would be read as a git option.
+                var invalid = name.StartsWith('-');
+                if (!invalid)
+                {
+                    var result = await _gitService.RunAsync(
+                        new[] { "check-ref-format", "--branch", name }, ct: cts.Token);
+                    invalid = result.ExitCode != 0;
+                }
+
+                cts.Token.ThrowIfCancellationRequested();
+                IsNewBranchInvalid = invalid;
+                IsBranchCheckPending = false;
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer keystroke replaced this check.
+            }
+            catch (Exception)
+            {
+                // git could not be run; don't block the user on a check that couldn't happen.
+                if (ReferenceEquals(_branchCheckCts, cts))
+                {
+                    IsNewBranchInvalid = false;
+                    IsBranchCheckPending = false;
+                }
+            }
+        }
 
         partial void OnSelectedThemeModeChanged(ThemeMode value)
         {
@@ -363,6 +565,7 @@ namespace GitSparseManager.ViewModels
             if (value != null && IsCloneMode)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
 
+            UpdateDestination();
             ScheduleRegenerate();
         }
 
@@ -381,6 +584,8 @@ namespace GitSparseManager.ViewModels
             if (value != null)
                 _ = LoadBranchesAsync();
 
+            IsFolderNameAuto = true;
+            UpdateDestination();
             ScheduleRegenerate();
         }
 
@@ -554,7 +759,8 @@ namespace GitSparseManager.ViewModels
         [RelayCommand]
         private void OpenSettings() =>
             _dialogService.ShowSettings(
-                new SettingsViewModel(SelectedThemeMode, _remoteTreeService, mode => SelectedThemeMode = mode));
+                new SettingsViewModel(SelectedThemeMode, _appSettings.FolderNamePattern, _remoteTreeService,
+                    mode => SelectedThemeMode = mode, ApplyFolderNamePattern));
 
         [RelayCommand]
         private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
@@ -608,7 +814,7 @@ namespace GitSparseManager.ViewModels
                 SelectedRepository!.HttpUrlToRepo,
                 SelectedBranch!.Name,
                 paths,
-                TargetFolder,
+                FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen), valid: true);
@@ -672,7 +878,7 @@ namespace GitSparseManager.ViewModels
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                TargetFolder,
+                FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen);
@@ -687,7 +893,10 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand(CanExecute = nameof(HasValidScript))]
+        private bool CanExecuteScript() =>
+            HasValidScript && !HasDestinationError && !IsNewBranchInvalid && !IsBranchCheckPending;
+
+        [RelayCommand(CanExecute = nameof(CanExecuteScript))]
         private async Task ExecuteScriptAsync()
         {
             var paths = DropFilePaths(GetSelectedPaths(), out _);
@@ -703,37 +912,22 @@ namespace GitSparseManager.ViewModels
                 return;
             }
 
-            var dialogTitle = string.IsNullOrWhiteSpace(TargetFolder)
-                ? "Select folder to clone into"
-                : $"Select parent folder for '{TargetFolder}'";
-            var picked = _dialogService.ShowOpenFolderDialog(dialogTitle);
-            if (picked == null) return;
-
-            string effectiveTargetFolder;
-            string? workingDirectory;
-            if (string.IsNullOrWhiteSpace(TargetFolder))
-            {
-                effectiveTargetFolder = ".";
-                workingDirectory = picked;
-            }
-            else
-            {
-                effectiveTargetFolder = Path.Combine(picked, TargetFolder);
-                workingDirectory = null;
-            }
+            var targetPath = Path.Combine(CloneParentFolder, FolderName);
+            var newBranch = string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName;
 
             var scriptToRun = _commandGenerator.GenerateBatScript(
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                effectiveTargetFolder,
-                string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
+                targetPath,
+                newBranch,
                 InitSubmodules,
-                KeepWindowOpen,
-                workingDirectory);
+                KeepWindowOpen);
 
-            if (!_dialogService.ShowConfirmation(
-                "This will execute Git commands locally. Continue?", "Execute Script"))
+            var message = $"Clone {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
+            if (newBranch != null) message += $"\nand create branch {newBranch}";
+
+            if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))
                 return;
 
             IsLoading = true;
@@ -765,15 +959,13 @@ namespace GitSparseManager.ViewModels
 
                     if (process.ExitCode == 0)
                     {
-                        var createdFolder = string.IsNullOrWhiteSpace(TargetFolder)
-                            ? picked
-                            : Path.Combine(picked, TargetFolder);
-
-                        if (Directory.Exists(Path.Combine(createdFolder, ".git")))
+                        if (Directory.Exists(Path.Combine(targetPath, ".git")))
                             AddOrUpdateRecentCheckout(
-                                createdFolder,
+                                targetPath,
                                 SelectedRepository?.HttpUrlToRepo,
-                                string.IsNullOrWhiteSpace(NewBranchName) ? SelectedBranch?.Name : NewBranchName);
+                                newBranch ?? SelectedBranch?.Name);
+
+                        UpdateDestination();
                     }
                 }
             }

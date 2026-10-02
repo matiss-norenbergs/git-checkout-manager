@@ -44,6 +44,19 @@
 
         <Border Style="{StaticResource SettingsSection}">
             <StackPanel>
+                <TextBlock Text="Clone" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="Folder name pattern:" Margin="0,0,0,4"/>
+                <TextBox Text="{Binding FolderNamePattern, UpdateSourceTrigger=PropertyChanged}" Padding="5,4"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           Text="{}{repo} = repository name · {branch} = new branch if set, else selected branch · {base} = selected branch"/>
+                <TextBlock Text="{Binding FolderNameExample}" Margin="0,4,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
                 <TextBlock Text="Tree cache" Style="{StaticResource SectionTitle}"/>
                 <Grid>
                     <Grid.ColumnDefinitions>

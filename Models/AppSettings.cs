@@ -22,5 +22,13 @@ namespace GitSparseManager.Models
 
         /// <summary>Whether the Script expander in the main window was left open.</summary>
         public bool ScriptPanelExpanded { get; set; } = false;
+
+        public const string DefaultFolderNamePattern = "{repo}_{branch}";
+
+        /// <summary>Folder where Clone checkouts are created; remembered between runs.</summary>
+        public string CloneParentFolder { get; set; } = string.Empty;
+
+        /// <summary>Tokens: {repo}, {branch} (new branch if set, else the selected one), {base} (selected branch).</summary>
+        public string FolderNamePattern { get; set; } = DefaultFolderNamePattern;
     }
 }
