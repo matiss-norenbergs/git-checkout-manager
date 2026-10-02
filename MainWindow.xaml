@@ -353,85 +353,6 @@
             </StackPanel>
         </Border>
 
-        <!-- ═══ SCAN BAR (legacy, hidden) ═════════════════════════════════════ -->
-        <Border DockPanel.Dock="Top"
-            Background="{DynamicResource PanelAltBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
-                Padding="10,7" IsEnabled="{Binding IsOperationEnabled}"
-                Visibility="Collapsed">
-            <StackPanel>
-
-                <!-- Tree Source row: Manage mode only, appears above Repo Path -->
-                <Grid Margin="0,0,0,6"
-                      Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Tree Source:" VerticalAlignment="Center"
-                               FontWeight="SemiBold" Margin="0,0,6,0"
-                               ToolTip="Optional: folder path or .json profile of a full clone — click Scan below to apply"/>
-                    <TextBox Grid.Column="1"
-                             Text="{Binding TreeSourcePath, UpdateSourceTrigger=PropertyChanged}"
-                             VerticalAlignment="Center" Padding="5,4"
-                             ToolTip="Folder path or .json profile — Scan will detect which and load accordingly"/>
-                    <Button Grid.Column="3" Content="Browse…"
-                            Command="{Binding BrowseTreeSourcePathCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"/>
-                    <Button Grid.Column="5" Content="Load Profile"
-                            Command="{Binding PickTreeSourceProfileCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Pick a saved .json profile — sets the path above; click Scan to load it"/>
-                </Grid>
-
-                <!-- Repo Path / Scan Path row: always visible -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                               FontWeight="SemiBold" Margin="0,0,6,0">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="Scan Path:"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsManageMode}" Value="True">
-                                        <Setter Property="Text" Value="Repo Path:"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBox Grid.Column="1"
-                             Text="{Binding ScanPath, UpdateSourceTrigger=PropertyChanged}"
-                             VerticalAlignment="Center" Padding="5,4"
-                             ToolTip="Path to the repository folder (git clone or plain copy)"/>
-                    <Button Grid.Column="3" Content="Browse…"
-                            Command="{Binding BrowseScanPathCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"/>
-                    <Button Grid.Column="5" Content="Load Profile"
-                            Command="{Binding LoadProfileCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Load a saved .json profile — populates path and tree automatically"/>
-                    <Button Grid.Column="7" Content="Scan"
-                            Command="{Binding ScanCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Scan folder or load .json profile set in Tree Source above"/>
-                </Grid>
-
-            </StackPanel>
-        </Border>
-
         <!-- ═══ PRESET BAR ══════════════════════════════════════════════════ -->
         <Border DockPanel.Dock="Top"
             Background="{DynamicResource PresetPanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
@@ -592,15 +513,12 @@
                                                     <DataTrigger Binding="{Binding IsFolder}" Value="False">
                                                         <Setter Property="Visibility" Value="Hidden"/>
                                                     </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </CheckBox.Style>
                                     </CheckBox>
 
-                                    <!-- Node name: bold for folders, muted for excluded files and placeholders -->
+                                    <!-- Node name: bold for folders, muted for excluded files -->
                                     <TextBlock VerticalAlignment="Center" Text="{Binding Name}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
@@ -619,11 +537,6 @@
                                                         </MultiDataTrigger.Conditions>
                                                         <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
                                                     </MultiDataTrigger>
-                                                    <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                                        <Setter Property="FontStyle" Value="Italic"/>
-                                                        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
-                                                        <Setter Property="ToolTip" Value="{x:Null}"/>
-                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>

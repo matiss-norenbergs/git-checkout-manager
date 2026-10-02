@@ -19,8 +19,6 @@ namespace GitSparseManager.ViewModels
         private readonly ISettingsService _settingsService;
         private readonly ClipboardService _clipboardService;
         private readonly IDialogService _dialogService;
-        private readonly ITreeCacheService _treeCacheService;
-        private readonly ILocalScanService _localScanService;
         private readonly IPresetService _presetService;
         private readonly IGitService _gitService;
         private readonly IRemoteTreeService _remoteTreeService;
@@ -29,7 +27,6 @@ namespace GitSparseManager.ViewModels
         private IGitHostService _hostService;
         private AppSettings _appSettings;
         private List<TreeNodeViewModel> _allRootNodes = new();
-        private List<string> _currentSparseCheckoutPaths = new();
         private bool _suppressHostSync;
         private CancellationTokenSource? _treeLoadCts;
 
@@ -69,10 +66,7 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private string _selectedPathsText = string.Empty;
         [ObservableProperty] private string _generatedScript = string.Empty;
 
-        // ── Scan ──────────────────────────────────────────────────────────────
-        [ObservableProperty] private string _scanPath = string.Empty;
         [ObservableProperty] private string _newBranchName = string.Empty;
-        [ObservableProperty] private string _treeSourcePath = string.Empty;
 
         // ── Manage checkout ───────────────────────────────────────────────────
         [ObservableProperty] private CheckoutInfo? _checkoutInfo;
@@ -83,7 +77,7 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private bool _isApplyEnabled = false;
 
         /// <summary>Repository root the Manage actions operate on.</summary>
-        private string ManageRoot => CheckoutInfo?.Root ?? ScanPath;
+        private string ManageRoot => CheckoutInfo?.Root ?? string.Empty;
 
         // ── Script options ────────────────────────────────────────────────────
         [ObservableProperty] private bool _initSubmodules = false;
@@ -132,7 +126,7 @@ namespace GitSparseManager.ViewModels
                 if (IsCloneMode)
                     return SelectedRepository == null ? string.Empty : RepoKey(SelectedRepository.HttpUrlToRepo);
 
-                if (CheckoutInfo == null) return ScanPath;
+                if (CheckoutInfo == null) return string.Empty;
 
                 return string.IsNullOrWhiteSpace(CheckoutInfo.RemoteUrl)
                     ? CheckoutInfo.Root
@@ -160,8 +154,6 @@ namespace GitSparseManager.ViewModels
             ISettingsService settingsService,
             ClipboardService clipboardService,
             IDialogService dialogService,
-            ITreeCacheService treeCacheService,
-            ILocalScanService localScanService,
             IPresetService presetService,
             IGitService gitService,
             IRemoteTreeService remoteTreeService,
@@ -175,8 +167,6 @@ namespace GitSparseManager.ViewModels
             _settingsService = settingsService;
             _clipboardService = clipboardService;
             _dialogService = dialogService;
-            _treeCacheService = treeCacheService;
-            _localScanService = localScanService;
             _presetService = presetService;
 
             _appSettings = settingsService.LoadSettings();
@@ -423,12 +413,10 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        private async Task ApplyFlatNodesAsync(List<TreeNode> flatNodes, string? scanRoot = null)
+        private async Task ApplyFlatNodesAsync(List<TreeNode> flatNodes)
         {
             var roots = await Task.Run(() => BuildTree(flatNodes));
             _allRootNodes = roots;
-            if (scanRoot != null)
-                SetupLazyLoaders(roots, scanRoot);
             TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
         }
 
@@ -466,7 +454,7 @@ namespace GitSparseManager.ViewModels
                 cts.Token.ThrowIfCancellationRequested();
 
                 // The whole tree is in memory, so no lazy loading is needed.
-                await ApplyFlatNodesAsync(result.Nodes, scanRoot: null);
+                await ApplyFlatNodesAsync(result.Nodes);
 
                 // Keep whatever selection still exists on the new branch.
                 if (previous.Count > 0)
@@ -751,7 +739,7 @@ namespace GitSparseManager.ViewModels
             {
                 var info = await _checkoutService.OpenAsync(path);
                 var nodes = await _checkoutService.GetTreeAsync(info.Root);
-                await ApplyFlatNodesAsync(nodes, scanRoot: null);
+                await ApplyFlatNodesAsync(nodes);
 
                 CheckoutInfo = info;
                 _checkoutSummarySuffix = string.Empty;
@@ -759,11 +747,11 @@ namespace GitSparseManager.ViewModels
                 if (!info.IsSparse)
                 {
                     // Everything is on disk today, so the current state is "all root folders".
-                    foreach (var root in _allRootNodes.Where(n => n.IsFolder && !n.IsPlaceholder))
+                    foreach (var root in _allRootNodes.Where(n => n.IsFolder))
                         root.IsChecked = true;
 
                     _baselinePaths = _allRootNodes
-                        .Where(n => n.IsFolder && !n.IsPlaceholder)
+                        .Where(n => n.IsFolder)
                         .Select(n => n.FullPath)
                         .ToList();
 
@@ -784,9 +772,6 @@ namespace GitSparseManager.ViewModels
                         _checkoutSummarySuffix =
                             $" · {skippedFiles} file path(s) in the sparse list are ignored; only folders can be selected.";
                 }
-
-                _currentSparseCheckoutPaths = new List<string>(_baselinePaths);
-                ScanPath = info.Root;
 
                 RecomputePendingChanges();
                 LoadPresetsForCurrentScan();
@@ -1420,234 +1405,6 @@ namespace GitSparseManager.ViewModels
             return lines.Count == 0 ? "The git command failed." : string.Join(" ", lines);
         }
 
-        // ── Local scan ────────────────────────────────────────────────────────
-
-        [RelayCommand]
-        private void BrowseScanPath()
-        {
-            var folder = _dialogService.ShowOpenFolderDialog("Select folder to scan");
-            if (folder != null)
-                ScanPath = folder;
-        }
-
-        [RelayCommand]
-        private void BrowseTreeSourcePath()
-        {
-            var folder = _dialogService.ShowOpenFolderDialog("Select full clone to use as tree source");
-            if (folder != null)
-                TreeSourcePath = folder;
-        }
-
-        [RelayCommand]
-        private void PickTreeSourceProfile()
-        {
-            var filePath = _dialogService.ShowOpenFileDialog(
-                "JSON files (*.json)|*.json|All files (*.*)|*.*", "Select Tree Source Profile");
-            if (filePath != null)
-                TreeSourcePath = filePath;
-        }
-
-        private async Task ScanFromTreeSourceProfileAsync(string profilePath)
-        {
-            IsLoading = true;
-            StatusMessage = "Loading tree source from profile…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var cache = await Task.Run(() => _treeCacheService.LoadLocalCache(profilePath));
-                if (cache == null)
-                {
-                    StatusMessage = "Could not read the profile file. Make sure it is a valid scan cache JSON.";
-                    return;
-                }
-
-                var scanRoot = Directory.Exists(cache.ScanPath) ? cache.ScanPath : null;
-                var roots = await Task.Run(() => BuildTree(cache.Nodes));
-                _allRootNodes = roots;
-                if (scanRoot != null)
-                    SetupLazyLoaders(roots, scanRoot);
-                TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-
-                var lazyNote = scanRoot != null ? "" : " (lazy loading unavailable — source folder not found on disk)";
-                var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                if (sparsePaths != null && sparsePaths.Count > 0)
-                {
-                    var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                    StatusMessage = $"Tree source loaded from profile: {cache.Nodes.Count} items.{lazyNote} {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                }
-                else
-                {
-                    StatusMessage = $"Tree source loaded from profile: {cache.Nodes.Count} items.{lazyNote} No sparse-checkout data found.";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error loading tree source: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task ScanAsync()
-        {
-            // A .json TreeSourcePath means load from profile rather than scan a folder
-            if (IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                && Path.GetExtension(TreeSourcePath).Equals(".json", StringComparison.OrdinalIgnoreCase)
-                && File.Exists(TreeSourcePath))
-            {
-                await ScanFromTreeSourceProfileAsync(TreeSourcePath);
-                return;
-            }
-
-            // In Manage mode, TreeSourcePath (full clone) takes priority for the tree scan
-            var pathToScan = IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                ? TreeSourcePath
-                : ScanPath;
-
-            if (string.IsNullOrWhiteSpace(pathToScan) || !Directory.Exists(pathToScan))
-            {
-                StatusMessage = IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                    ? "Please enter a valid Tree Source path."
-                    : "Please enter a valid folder path to scan.";
-                return;
-            }
-
-            IsLoading = true;
-            StatusMessage = "Scanning folder…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var flatNodes = await _localScanService.ScanAsync(pathToScan);
-                _treeCacheService.SaveLocalCache(pathToScan, flatNodes);
-                await ApplyFlatNodesAsync(flatNodes, pathToScan);
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-
-                if (IsManageMode)
-                {
-                    var usingTreeSource = !string.IsNullOrWhiteSpace(TreeSourcePath);
-                    var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                    var sourceNote = usingTreeSource ? " from tree source" : string.Empty;
-                    if (sparsePaths != null && sparsePaths.Count > 0)
-                    {
-                        var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                        StatusMessage = $"Scan complete: {flatNodes.Count} items{sourceNote}. {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                    }
-                    else
-                    {
-                        StatusMessage = $"Scan complete: {flatNodes.Count} items{sourceNote}. No sparse-checkout data found.";
-                    }
-                }
-                else
-                {
-                    StatusMessage = $"Scan complete: {flatNodes.Count} items. Cache saved to scan folder.";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Scan error: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task LoadProfileAsync()
-        {
-            var filePath = _dialogService.ShowOpenFileDialog(
-                "JSON files (*.json)|*.json|All files (*.*)|*.*", "Load Scan Profile");
-            if (filePath == null) return;
-
-            // In Manage mode with Tree Source set: extract ScanPath from the profile, then let ScanAsync
-            // build the full tree from Tree Source and probe the new ScanPath for checkout state
-            if (IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath))
-            {
-                IsLoading = true;
-                StatusMessage = "Reading profile path…";
-                try
-                {
-                    var peek = await Task.Run(() => _treeCacheService.LoadLocalCache(filePath));
-                    if (peek != null && !string.IsNullOrEmpty(peek.ScanPath))
-                        ScanPath = peek.ScanPath;
-                }
-                finally
-                {
-                    IsLoading = false;
-                }
-                await ScanAsync();
-                return;
-            }
-
-            IsLoading = true;
-            StatusMessage = "Loading profile…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var cache = await Task.Run(() => _treeCacheService.LoadLocalCache(filePath));
-                if (cache == null)
-                {
-                    StatusMessage = "Could not read the selected file. Make sure it is a valid scan cache JSON.";
-                    return;
-                }
-
-                var scanRoot = Directory.Exists(cache.ScanPath) ? cache.ScanPath : null;
-                var roots = await Task.Run(() => BuildTree(cache.Nodes));
-                _allRootNodes = roots;
-                if (scanRoot != null)
-                    SetupLazyLoaders(roots, scanRoot);
-                TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
-                if (!string.IsNullOrEmpty(cache.ScanPath))
-                    ScanPath = cache.ScanPath;
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-                var lazyNote = scanRoot != null ? "" : " (lazy loading unavailable — scan folder not found on disk)";
-                if (IsManageMode && !string.IsNullOrWhiteSpace(ScanPath))
-                {
-                    var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                    if (sparsePaths != null && sparsePaths.Count > 0)
-                    {
-                        var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                        StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote} {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                    }
-                    else
-                    {
-                        StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote} No sparse-checkout data found.";
-                    }
-                }
-                else
-                {
-                    StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote}";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error loading profile: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
         // ── Presets ───────────────────────────────────────────────────────────────
 
         [RelayCommand(CanExecute = nameof(CanSavePreset))]
@@ -1722,83 +1479,6 @@ namespace GitSparseManager.ViewModels
 
         private bool CanModifyPreset() => SelectedPreset != null;
 
-        // ── Lazy-load helpers ──────────────────────────────────────────────────
-
-        private void SetupLazyLoaders(IEnumerable<TreeNodeViewModel> nodes, string scanRoot)
-        {
-            foreach (var node in nodes)
-            {
-                if (node.IsPlaceholder) continue;
-
-                if (node.IsFolder && node.HasUnscannedChildren)
-                    node.SetLazyLoader(CreateLazyLoader(scanRoot));
-                else
-                    SetupLazyLoaders(node.Children, scanRoot);
-            }
-        }
-
-        private Func<TreeNodeViewModel, Task> CreateLazyLoader(string scanRoot) =>
-            async (node) =>
-            {
-                try
-                {
-                    var subNodes = await _localScanService.ScanSubfolderAsync(scanRoot, node.FullPath);
-
-                    // Remove all loading placeholders
-                    foreach (var ph in node.Children.Where(c => c.IsPlaceholder).ToList())
-                        node.Children.Remove(ph);
-
-                    // Populate with real children (UI thread – after await)
-                    PopulateChildren(subNodes, node);
-
-                    // Recursively wire lazy loaders for any newly-discovered boundary folders
-                    SetupLazyLoaders(node.Children, scanRoot);
-
-                    // Propagate parent's checked state to newly loaded children
-                    node.PropagateCheckedToNewChildren();
-
-                    // Re-apply active search filter so new nodes are correctly shown/hidden
-                    if (!string.IsNullOrEmpty(SearchFilter))
-                        node.ApplyFilter(SearchFilter);
-
-                    node.IsLoaded = true;
-                }
-                catch (Exception ex)
-                {
-                    foreach (var ph in node.Children.Where(c => c.IsPlaceholder).ToList())
-                        node.Children.Remove(ph);
-                    node.Children.Add(TreeNodeViewModel.CreateErrorPlaceholder(ex.Message));
-                    node.IsLoaded = true;
-                }
-                finally
-                {
-                    node.IsLoadingChildren = false;
-                }
-            };
-
-        private static void PopulateChildren(List<TreeNode> subNodes, TreeNodeViewModel parentVm)
-        {
-            // Seed the map with the parent so its immediate children resolve correctly
-            var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal)
-            {
-                [parentVm.FullPath] = parentVm
-            };
-
-            foreach (var node in subNodes.OrderBy(n => n.Path, StringComparer.Ordinal))
-            {
-                var slash = node.Path.LastIndexOf('/');
-                var nodeParent = slash < 0
-                    ? parentVm
-                    : map.TryGetValue(node.Path[..slash], out var found) ? found : parentVm;
-
-                var vm = new TreeNodeViewModel(node, nodeParent);
-                nodeParent.Children.Add(vm);
-                map[node.Path] = vm;
-            }
-
-            SortChildrenForDisplay(parentVm);
-        }
-
         // ── Helpers ───────────────────────────────────────────────────────────
 
         private static List<TreeNodeViewModel> BuildTree(List<TreeNode> flat)
@@ -1862,10 +1542,7 @@ namespace GitSparseManager.ViewModels
             }
 
             foreach (var child in parent.Children)
-            {
-                if (!child.IsPlaceholder)
-                    SortChildrenForDisplay(child);
-            }
+                SortChildrenForDisplay(child);
         }
 
         private static int CompareForExplorerDisplay(TreeNodeViewModel? x, TreeNodeViewModel? y)
@@ -1873,10 +1550,6 @@ namespace GitSparseManager.ViewModels
             if (ReferenceEquals(x, y)) return 0;
             if (x is null) return 1;
             if (y is null) return -1;
-
-            // Keep placeholder rows (loading/error) after real items.
-            if (x.IsPlaceholder != y.IsPlaceholder)
-                return x.IsPlaceholder ? 1 : -1;
 
             // Explorer-style grouping: folders before files.
             if (x.IsFolder != y.IsFolder)
@@ -1943,7 +1616,7 @@ namespace GitSparseManager.ViewModels
         {
             foreach (var node in nodes)
             {
-                if (node.IsPlaceholder || string.IsNullOrEmpty(node.FullPath)) continue;
+                if (string.IsNullOrEmpty(node.FullPath)) continue;
                 map[node.FullPath] = node;
                 BuildFlatPathMap(node.Children, map);
             }
@@ -1952,7 +1625,6 @@ namespace GitSparseManager.ViewModels
         /// <summary>Checks the tree to match a sparse list, returning how many entries were files.</summary>
         private int ApplySparseCheckoutState(List<string> checkedPaths)
         {
-            _currentSparseCheckoutPaths = new List<string>(checkedPaths);
             var pathSet = new HashSet<string>(checkedPaths, StringComparer.Ordinal);
             var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
             BuildFlatPathMap(_allRootNodes, map);

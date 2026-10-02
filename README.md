@@ -6,10 +6,18 @@ Git Sparse Checkout Manager is a Windows desktop tool that helps you clone **onl
 
 ## How It Works — Overview
 
-1. Scan a local folder to load the repository structure as a tree.
-2. Tick the folders and files you want.
+**Clone mode** builds its tree from the remote repository (GitLab or GitHub) — no local copy needed:
+
+1. Connect to your Git host and pick a repository and branch. The tree loads automatically.
+2. Tick the folders you want.
 3. Click **Generate Script** to get the Git commands.
 4. Copy, save, or run the script.
+
+**Manage Checkout mode** builds its tree from an existing local clone's current commit:
+
+1. Open a checkout (browse to it, or pick one from the recent-checkouts list).
+2. Tick or untick folders to change what should be materialised on disk.
+3. Review the pending changes, then generate a script or apply them directly.
 
 ---
 
@@ -19,14 +27,15 @@ Git Sparse Checkout Manager is a Windows desktop tool that helps you clone **onl
 |---|---|
 | **Mode Tabs** (top-left) | Switch between **Clone** and **Manage Checkout** modes |
 | **Theme selector** (top-right) | Choose System, Light, or Dark theme |
-| **Connection Bar** | Enter a GitLab URL and Personal Access Token to load repositories and branches from GitLab |
-| **Repo / Branch Bar** | Set clone URL, branch (type to filter), optional new-branch name, target folder, and script options (submodules, CMD window behaviour) |
-| **Scan Bar** | Scan a local folder to load the repository tree, or load a previously saved profile |
-| **Preset Bar** | Save, load, rename, and delete named path selections for the current scan |
-| **Repository Tree** (left panel) | Checkboxes to select folders and files; deep folders expand on demand |
-| **Selected Paths** (right, top) | Live list of every path you have ticked |
+| **Connection Bar** (Clone) | Enter a GitLab/GitHub URL and Personal Access Token to load repositories and branches |
+| **Repo / Branch Bar** (Clone) | Pick the repository and branch (type to filter), optional new-branch name, target folder, and script options (submodules, CMD window behaviour) |
+| **Checkout Bar** (Manage) | Open a Git checkout by browsing to it or picking a recent one; shows a summary of its remote, branch, and local changes |
+| **Preset Bar** | Save, load, rename, and delete named path selections, shared between Clone and Manage for the same repository |
+| **Repository Tree** (left panel) | Checkboxes to select folders; the full tree is loaded up front |
+| **Selected Paths** (Clone, right, top) | Live list of every path you have ticked |
+| **Pending Changes** (Manage, right, top) | Folders that will be added or removed relative to the checkout's current sparse state |
 | **Generated Script** (right, bottom) | The Git commands, ready to copy or run |
-| **Action Buttons** (bottom) | Generate, Copy, Save .bat, Save .sh, Execute |
+| **Action Buttons** (bottom) | Generate, Copy, Save .bat, Save .sh, Execute (Clone) / Apply Now (Manage) |
 | **Status Bar** (very bottom) | Progress messages and error details |
 
 ---
@@ -58,11 +67,9 @@ The token is encrypted with DPAPI and saved locally; you only need to enter it o
 
 ---
 
-### Step 1 — Scan a Local Folder
+### Step 1 — Pick a Repository and Branch
 
-1. Enter the path to a local folder (a full clone or any plain copy of the repository) in the **Scan Path** field, or click **Browse…** to pick one.
-2. Click **Scan**. The app walks the folder tree (skipping the `.git` directory) and displays it in the **Repository Tree**. The first four levels are loaded immediately; deeper folders are expanded on demand when you open them in the tree.
-3. A file named `sparse-checkout-cache.json` is automatically saved inside the scanned folder. You can reload it later without rescanning (see [Loading a Saved Profile](#loading-a-saved-profile)).
+Once connected, choose a **Repository** and **Branch**. The app fetches the full folder tree for that branch straight from the server (using a blob-less fetch, so file contents are never downloaded) and displays it in the **Repository Tree**. The tree is cached locally per repository/branch/commit; use **Refresh tree** to re-fetch it, or **Clear tree cache** to drop everything cached.
 
 ### Step 2 — Set Script Options (Optional)
 
@@ -108,20 +115,19 @@ Use **Manage Checkout** when you already have a full local clone and want to cha
 ### How it works
 
 1. Switch to **Manage Checkout** using the mode tabs at the top.
-2. Enter the path to your local Git repository in the **Repo Path** field (the folder that contains `.git`).
-3. Optionally fill in **Tree Source Path** to scan a different folder for the tree structure — useful when a separate full copy is available for browsing but you want to apply changes to a different repo.
-4. Click **Scan**. The app reads the repo's current sparse-checkout paths with `git sparse-checkout list` and pre-ticks them in the tree.
-5. Check or uncheck folders and files to reflect what you want materialised.
-6. Choose an action:
+2. Click **Browse…** and pick a folder inside a Git checkout (the app finds the repository root for you), or pick a recently opened checkout from the dropdown — the most recently used one opens automatically when you switch to this mode.
+3. The app reads the checkout's HEAD tree and its current sparse-checkout paths (via `git sparse-checkout list`) and pre-ticks them in the tree. If the checkout is a full (non-sparse) clone, every root folder starts ticked.
+4. Check or uncheck folders to reflect what you want materialised. The **Pending Changes** panel shows what will be added and removed.
+5. Choose an action:
 
 | Button | Action |
 |---|---|
 | **Generate Script** | Produces a `manage-sparse-checkout.bat` in the script panel without touching the repo |
 | **Save .bat** | Saves the manage script as a `.bat` file |
 | **Save .sh** | Saves the manage script as a `.sh` file |
-| **Apply** | Runs the changes directly: discards local changes in removed paths, cleans them from disk (`git restore` + `git clean -ffdx`), then runs `git sparse-checkout set` |
+| **Apply Now** | Runs the changes directly in the checkout: restores and cleans removed folders (reviewing what would be deleted first, with an option to keep changed/untracked files), then runs `git sparse-checkout set`/`add` to materialise the added ones |
 
-> **Apply** will permanently delete files from removed paths (including `node_modules` and other ignored files). A confirmation prompt lists how many paths will be removed before proceeding.
+> **Apply Now** can permanently delete files from removed folders. When any such files exist, a review dialog lists them so you can choose what to keep before confirming.
 
 ### What the manage script does
 
@@ -134,19 +140,9 @@ For all selected paths it then runs `git sparse-checkout set` to update the repo
 
 ---
 
-## Loading a Saved Profile
-
-If you previously scanned a folder, a `sparse-checkout-cache.json` file was saved there.
-
-Click **Load Profile**, select that JSON file, and the tree reloads instantly — no internet connection or rescan required.
-
-If the original scan folder is still present on disk, lazy loading continues to work after loading a profile.
-
----
-
 ## Presets
 
-Presets let you save and restore named path selections for a scan.
+Presets let you save and restore named path selections, shared between Clone and Manage for the same repository.
 
 | Button | Action |
 |---|---|
@@ -155,7 +151,7 @@ Presets let you save and restore named path selections for a scan.
 | **Rename** | Renames the selected preset |
 | **Delete** | Deletes the selected preset |
 
-Presets are stored per scan folder in `%AppData%\GitSparseManager\presets.json` and are available whenever you open or rescan the same folder. If a saved path no longer exists in the tree (e.g. after a rescan that picked up changes), it is silently skipped.
+Presets are stored per repository in `%AppData%\GitSparseManager\presets.json`, keyed by the repository's remote URL (or by its local path when there is no remote), so the same presets show up in Clone and Manage mode for that repository. If a saved path no longer exists in the tree, it is silently skipped.
 
 ---
 
@@ -210,16 +206,15 @@ The title bar colour updates to match the selected theme. Your choice is saved a
 
 - Windows 10 or later
 - .NET 8 Desktop Runtime
-- Access to a GitLab instance with a Personal Access Token
-- Git installed and available in your system PATH (required for **Execute Locally** and **Apply** in Manage Checkout mode)
+- Access to a GitLab or GitHub instance with a Personal Access Token
+- Git installed and available in your system PATH (required for **Execute Locally** in Clone mode and **Apply Now** in Manage Checkout mode)
 
 ---
 
 ## Tips
 
-- **Large repositories**: use the **Search tree** filter to quickly find the paths you need. Deep folders load on demand when expanded.
-- **Share with teammates**: scan once, save the cache JSON, and share it — teammates can use **Load Profile** to load the same tree without having a local copy of the repository.
+- **Large repositories**: use the **Search tree** filter to quickly find the paths you need.
 - **Cross-platform**: save a `.sh` script from Windows, then run it on a Linux or macOS machine where Git is available.
 - **Safe to re-run**: the generated `git clone` command will fail if the target folder already exists — delete or rename the folder before running the script again.
-- **Token is saved**: your GitLab URL and Personal Access Token are encrypted and stored between sessions; you do not need to re-enter them each time you launch the app.
+- **Token is saved**: your server URL and Personal Access Token are encrypted and stored between sessions; you do not need to re-enter them each time you launch the app.
 - **Reuse selections**: use Presets to save common path combinations and switch between them instantly.

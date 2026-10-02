@@ -141,23 +141,12 @@ Must:
 
 ---
 
-### 3.6 Repository Profiles
+### 3.6 Tree Sources
 
-Store user configurations:
+The app builds its tree from one of two sources, depending on the active mode:
 
-```json
-{
-  "repositories": [
-    {
-      "name": "Game",
-      "url": "https://gitlab.com/group/repo.git",
-      "projectId": 123,
-      "defaultBranch": "develop",
-      "localPath": "D:\\Projects\\Game"
-    }
-  ]
-}
-```
+* **Clone mode** — `RemoteTreeService` fetches the tree straight from the remote repository (a blob-less `git fetch` plus `git ls-tree`) for the selected repository/branch, with no local checkout required. Results are cached on disk per repository/branch/commit.
+* **Manage Checkout mode** — `CheckoutService` reads the tree from an already-cloned repository's current `HEAD`, plus its sparse-checkout state via `git sparse-checkout list`. Recently opened checkouts are remembered so the user can reopen one without browsing again.
 
 ---
 
@@ -185,25 +174,21 @@ GitSparseManager
 ├── Models
 │   ├── Repository.cs
 │   ├── Branch.cs
-│   ├── TreeNode.cs
-│   └── RepositoryProfile.cs
+│   └── TreeNode.cs
 │
 ├── ViewModels
 │   ├── MainViewModel.cs
-│   ├── RepositoryViewModel.cs
 │   ├── TreeNodeViewModel.cs
 │
 ├── Views
 │   ├── MainWindow.xaml
-│   ├── RepositoryView.xaml
 │
 ├── Services
-│   ├── GitLabService.cs
+│   ├── RemoteTreeService.cs      (Clone mode: builds the tree from the remote repository)
+│   ├── CheckoutService.cs        (Manage mode: builds the tree from an existing local checkout)
 │   ├── CommandGenerator.cs
 │   ├── SettingsService.cs
 │   ├── ClipboardService.cs
-│
-├── Helpers
 │
 └── App.xaml
 ```

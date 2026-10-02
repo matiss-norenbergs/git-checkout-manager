@@ -32,8 +32,7 @@ namespace GitSparseManager.Services
                     Name = slash < 0 ? path : path[(slash + 1)..],
                     // A submodule is a gitlink; show it as a folder so it can be selected.
                     Type = gitType == "blob" ? "blob" : "tree",
-                    IsSubmodule = isSubmodule,
-                    HasUnscannedChildren = false
+                    IsSubmodule = isSubmodule
                 });
             }
 
