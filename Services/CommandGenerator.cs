@@ -69,6 +69,15 @@ namespace GitSparseManager.Services
                 sb.AppendLine("        if exist \"%%b\\\" ( git submodule update --init --remote --recursive -- \"%%b\" || set SUBFAIL=1 )");
                 sb.AppendLine("    )");
                 sb.AppendLine(")");
+                // Gitlinks in the tree with no .gitmodules entry can't be initialized; flag them for the maintainer.
+                sb.AppendLine("for /f \"tokens=3*\" %%a in ('git ls-files -s ^| findstr /b 160000') do (");
+                sb.AppendLine("    set \"INMOD=\"");
+                sb.AppendLine("    for /f \"usebackq tokens=1*\" %%c in (`git config -f .gitmodules --get-regexp \"\\.path$\" 2^>nul`) do if \"%%d\"==\"%%b\" set INMOD=1");
+                sb.AppendLine("    if not defined INMOD if exist \"%%b\\\" (");
+                sb.AppendLine("        echo WARNING: %%b is a submodule with no .gitmodules entry - ask the repo maintainer to fix .gitmodules");
+                sb.AppendLine("        set SUBFAIL=1");
+                sb.AppendLine("    )");
+                sb.AppendLine(")");
             }
 
             AppendBatEnd(sb, keepWindowOpen, initSubmodules);
@@ -127,6 +136,13 @@ namespace GitSparseManager.Services
                 sb.AppendLine("        [ -d \"$path\" ] && { git submodule update --init --remote --recursive -- \"$path\" || SUBFAIL=1; }");
                 sb.AppendLine("    done < <(git config -f .gitmodules --get-regexp '^submodule\\..*\\.path$')");
                 sb.AppendLine("fi");
+                // Gitlinks in the tree with no .gitmodules entry can't be initialized; flag them for the maintainer.
+                sb.AppendLine("while read -r mode sha stage path; do");
+                sb.AppendLine("    [ -d \"$path\" ] || continue");
+                sb.AppendLine("    git config -f .gitmodules --get-regexp '\\.path$' 2>/dev/null | cut -d' ' -f2- | grep -qxF -- \"$path\" && continue");
+                sb.AppendLine("    echo \"WARNING: $path is a submodule with no .gitmodules entry - ask the repo maintainer to fix .gitmodules\"");
+                sb.AppendLine("    SUBFAIL=1");
+                sb.AppendLine("done < <(git ls-files -s | grep '^160000')");
             }
 
             AppendShEnd(sb, keepWindowOpen, initSubmodules);
@@ -246,30 +262,19 @@ namespace GitSparseManager.Services
 
         private static void AppendBatEnd(StringBuilder sb, bool keepWindowOpen, bool trackSubmodules)
         {
-            if (keepWindowOpen)
-            {
-                sb.AppendLine();
-                sb.AppendLine("pause");
-            }
-
             sb.AppendLine();
             if (trackSubmodules)
             {
-                // Something to read, so pause even when the success path wouldn't (once, not twice).
-                if (keepWindowOpen)
-                {
-                    sb.AppendLine("if defined SUBFAIL exit /b 2");
-                }
-                else
-                {
-                    sb.AppendLine("if defined SUBFAIL (");
-                    sb.AppendLine("    echo.");
-                    sb.AppendLine("    echo Some submodules failed to initialize — see the output above");
-                    sb.AppendLine("    pause");
-                    sb.AppendLine("    exit /b 2");
-                    sb.AppendLine(")");
-                }
+                // Message, then the single pause (always on failure, else only if keepWindowOpen), then exit.
+                sb.AppendLine("if defined SUBFAIL (");
+                sb.AppendLine("    echo.");
+                sb.AppendLine("    echo Some submodules failed to initialize — see the output above");
+                sb.AppendLine("    pause");
+                sb.AppendLine("    exit /b 2");
+                sb.AppendLine(")");
             }
+            if (keepWindowOpen)
+                sb.AppendLine("pause");
             sb.AppendLine("exit /b 0");
             sb.AppendLine();
             sb.AppendLine(":failed");
@@ -294,26 +299,19 @@ namespace GitSparseManager.Services
 
         private static void AppendShEnd(StringBuilder sb, bool keepWindowOpen, bool trackSubmodules)
         {
-            if (keepWindowOpen)
-            {
-                sb.AppendLine();
-                sb.AppendLine("read -rsp $'\\nPress any key to continue...\\n' -n1");
-            }
-
             sb.AppendLine();
             if (trackSubmodules)
             {
-                // Something to read, so pause even when the success path wouldn't (once, not twice).
+                // Message, then the single pause (always on failure, else only if keepWindowOpen), then exit.
                 sb.AppendLine("if [ \"$SUBFAIL\" = 1 ]; then");
-                if (!keepWindowOpen)
-                {
-                    sb.AppendLine("    echo");
-                    sb.AppendLine("    echo \"Some submodules failed to initialize — see the output above\"");
-                    sb.AppendLine("    read -rsp $'\\nPress any key to continue...\\n' -n1");
-                }
+                sb.AppendLine("    echo");
+                sb.AppendLine("    echo \"Some submodules failed to initialize — see the output above\"");
+                sb.AppendLine("    read -rsp $'\\nPress any key to continue...\\n' -n1");
                 sb.AppendLine("    exit 2");
                 sb.AppendLine("fi");
             }
+            if (keepWindowOpen)
+                sb.AppendLine("read -rsp $'\\nPress any key to continue...\\n' -n1");
             sb.AppendLine("exit 0");
         }
 
