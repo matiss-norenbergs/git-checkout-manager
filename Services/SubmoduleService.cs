@@ -38,6 +38,43 @@ namespace GitSparseManager.Services
             return list;
         }
 
+        public async Task<SubmoduleInfo?> GetAsync(string root, string path, CancellationToken ct = default)
+        {
+            var pinned = await GetPinnedAsync(root, ct);
+            var entry = pinned.FirstOrDefault(p => string.Equals(p.Path, path, StringComparison.Ordinal));
+            if (entry.Path == null) return null;
+
+            var byPath = await GetGitmodulesAsync(root, ct);
+            return await BuildAsync(root, entry.Path, entry.Sha, byPath, ct);
+        }
+
+        public async Task<GitResult> InitAndUpdateAsync(string root, SubmoduleInfo sub, bool latestFromBranch,
+            bool includeNested, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(sub.Name))
+                return new GitResult(1, string.Empty, "This submodule has no entry in .gitmodules, so there is no URL to clone from.");
+
+            // Registers the submodule and turns a relative URL (../x.git) into an absolute one.
+            var init = await _gitService.RunAsync(
+                new[] { "submodule", "init", "--", sub.Path }, root, null, ct);
+            if (init.ExitCode != 0) return init;
+
+            // Credentials are scoped to the resolved URL, so they never reach another server.
+            GitAuth? auth = null;
+            var urlResult = await _gitService.RunAsync(
+                new[] { "config", "--get", $"submodule.{sub.Name}.url" }, root, null, ct);
+            var url = urlResult.ExitCode == 0 ? urlResult.StdOut.Trim() : string.Empty;
+            if (url.Length > 0) auth = resolveAuth(url);
+
+            var args = new List<string> { "submodule", "update" };
+            if (latestFromBranch) args.Add("--remote");
+            if (includeNested) args.Add("--recursive");
+            args.Add("--");
+            args.Add(sub.Path);
+
+            return await _gitService.RunAsync(args, root, auth, ct, allowInteractiveAuth: true);
+        }
+
         // ── Steps ─────────────────────────────────────────────────────────────
 
         /// <summary>Gitlink entries of the index. These are listed even when the sparse selection leaves them off disk.</summary>

@@ -23,6 +23,12 @@ namespace GitSparseManager.Models
         /// <summary>Whether the Script expander in the main window was left open.</summary>
         public bool ScriptPanelExpanded { get; set; } = false;
 
+        /// <summary>Submodules window: update to the branch tip (--remote) instead of the pinned commit.</summary>
+        public bool SubmoduleLatestFromBranch { get; set; } = false;
+
+        /// <summary>Submodules window: also initialize nested submodules (--recursive).</summary>
+        public bool SubmoduleIncludeNested { get; set; } = true;
+
         public const string DefaultFolderNamePattern = "{repo}_{branch}";
 
         /// <summary>Folder where Clone checkouts are created; remembered between runs.</summary>

@@ -65,74 +65,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Flat button style -->
-        <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Padding" Value="16,6"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <!-- Disabled looks faded (muted text) rather than switching to the disabled-control background. -->
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="2"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlPressedBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="ColoredActionButtonBase" TargetType="Button" BasedOn="{StaticResource ActionButton}">
-            <Setter Property="Foreground" Value="{x:Static Brushes.White}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="2"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"
-                                              TextElement.Foreground="{x:Static Brushes.White}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="AccentActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
-        </Style>
-
         <Style x:Key="DangerActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
             <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}"/>
@@ -141,51 +73,6 @@
         <Style x:Key="SuccessActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
             <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource SuccessBorderBrush}"/>
-        </Style>
-
-        <!-- Bottom-anchored expander: the chevron points up while collapsed ("grow upward") and down once open. -->
-        <Style x:Key="BottomPanelExpander" TargetType="Expander">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Expander">
-                        <DockPanel>
-                            <ToggleButton x:Name="HeaderToggle" DockPanel.Dock="Top"
-                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                                          Cursor="Hand" Focusable="False">
-                                <ToggleButton.Template>
-                                    <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="Hdr" Padding="8,4"
-                                                Background="{DynamicResource SectionHeaderBackgroundBrush}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock x:Name="Chevron" Text="&#x25B2;" FontSize="9"
-                                                           VerticalAlignment="Center" Margin="0,0,6,0"
-                                                           Foreground="{DynamicResource MutedTextBrush}"/>
-                                                <ContentPresenter VerticalAlignment="Center"
-                                                                  TextElement.Foreground="{DynamicResource WindowForegroundBrush}"/>
-                                            </StackPanel>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Chevron" Property="Text" Value="&#x25BC;"/>
-                                            </Trigger>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Hdr" Property="Background" Value="{DynamicResource TabHoverBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </ToggleButton.Template>
-                                <ContentPresenter ContentSource="Header"/>
-                            </ToggleButton>
-                            <ContentPresenter x:Name="ExpandSite" Visibility="Collapsed"/>
-                        </DockPanel>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="True">
-                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
         </Style>
     </Window.Resources>
 
@@ -283,12 +170,10 @@
                     </TextBlock>
                 </StackPanel>
 
-                <Button Grid.Column="9"
+                <Button Grid.Column="9" Content="Connect"
                         Command="{Binding ConnectCommand}"
                         Style="{StaticResource AccentActionButton}"
-                        Margin="0">
-                    <TextBlock Text="Connect" Foreground="White" FontWeight="SemiBold"/>
-                </Button>
+                        Margin="0"/>
             </Grid>
         </Border>
 
@@ -450,14 +335,12 @@
                 </StackPanel>
 
                 <!-- Primary action (right) -->
-                <Button Grid.Column="1"
+                <Button Grid.Column="1" Content="Execute Locally"
                         Command="{Binding ExecuteScriptCommand}"
                         Style="{StaticResource AccentActionButton}"
                         Margin="0"
                         Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}"
-                        ToolTip="Runs the generated batch script on this machine">
-                    <TextBlock Text="Execute Locally" Foreground="White" FontWeight="SemiBold"/>
-                </Button>
+                        ToolTip="Runs the generated batch script on this machine"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
                     <Button Content="Retry cleanup"
@@ -465,12 +348,11 @@
                             Style="{StaticResource ActionButton}"
                             Visibility="{Binding HasCleanupLeftovers, Converter={StaticResource BoolToVis}}"
                             ToolTip="Close programs using these folders, then retry"/>
-                    <Button Command="{Binding ApplyManageCommand}"
+                    <Button Content="Apply Now"
+                            Command="{Binding ApplyManageCommand}"
                             Style="{StaticResource AccentActionButton}"
                             Margin="0"
-                            ToolTip="Runs 'git sparse-checkout set' directly in the selected repository">
-                        <TextBlock Text="Apply Now" Foreground="White" FontWeight="SemiBold"/>
-                    </Button>
+                            ToolTip="Runs 'git sparse-checkout set' directly in the selected repository"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -780,7 +662,8 @@
                         </Grid.RowDefinitions>
 
                         <Expander Grid.Row="0" Header="Script" FontWeight="SemiBold" FontSize="12"
-                                  Style="{StaticResource BottomPanelExpander}"
+                                  Style="{StaticResource SectionExpander}"
+                                  ExpandDirection="Up"
                                   IsExpanded="{Binding ScriptPanelExpanded, Mode=TwoWay}"
                                   Expanded="ScriptExpander_Changed"
                                   Collapsed="ScriptExpander_Changed">

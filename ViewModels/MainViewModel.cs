@@ -1027,11 +1027,29 @@ namespace GitSparseManager.ViewModels
             var root = CheckoutInfo?.Root;
             if (string.IsNullOrWhiteSpace(root)) return;
 
-            var vm = new SubmodulesViewModel(_submoduleService, root);
+            var vm = new SubmodulesViewModel(
+                _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService);
             _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
             _dialogService.ShowSubmodules(vm);
 
-            await ReloadCheckoutAsync();
+            // A full reload would rebuild the tree and drop the user's ticks, so only re-read the summary,
+            // and only when an initialize run could have changed something.
+            if (vm.HasInitialized)
+                await RefreshCheckoutSummaryAsync(root);
+        }
+
+        /// <summary>Re-reads the checkout state for the summary line (local-change count) without touching the tree, ticks or baseline.</summary>
+        private async Task RefreshCheckoutSummaryAsync(string root)
+        {
+            try
+            {
+                CheckoutInfo = await _checkoutService.OpenAsync(root);
+                UpdateCheckoutSummary();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Could not refresh the checkout summary: {ex.Message}";
+            }
         }
 
         private bool HasCheckout => CheckoutInfo != null;

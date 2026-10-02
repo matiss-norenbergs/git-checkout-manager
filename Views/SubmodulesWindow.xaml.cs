@@ -5,12 +5,14 @@ using GitSparseManager.ViewModels;
 
 namespace GitSparseManager.Views
 {
-    /// <summary>Modal, read-only list of a checkout's submodules. Bound to a <see cref="SubmodulesViewModel"/> by its caller.</summary>
+    /// <summary>Modal list of a checkout's submodules, with actions to initialize the selected ones. Bound to a <see cref="SubmodulesViewModel"/> by its caller.</summary>
     public partial class SubmodulesWindow : Window
     {
         public SubmodulesWindow()
         {
             InitializeComponent();
+            // Cancel comes first while git is running, so a half-finished update is never abandoned silently.
+            Closing += (_, e) => e.Cancel = (DataContext as SubmodulesViewModel)?.IsRunning == true;
             Closed += (_, _) => (DataContext as SubmodulesViewModel)?.Cancel();
         }
     }

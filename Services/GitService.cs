@@ -27,7 +27,8 @@ namespace GitSparseManager.Services
         }
 
         public async Task<GitResult> RunAsync(IEnumerable<string> args, string? workingDirectory = null,
-                                              GitAuth? auth = null, CancellationToken ct = default)
+                                              GitAuth? auth = null, CancellationToken ct = default,
+                                              bool allowInteractiveAuth = false)
         {
             var psi = new ProcessStartInfo
             {
@@ -46,9 +47,11 @@ namespace GitSparseManager.Services
             if (!string.IsNullOrWhiteSpace(workingDirectory))
                 psi.WorkingDirectory = workingDirectory;
 
-            // Never let git block on a credential prompt that has no visible window
+            // There is no console to type into, so git itself never prompts. Credential Manager has its
+            // own window and is only silenced unless the caller allows a login window.
             psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-            psi.Environment["GCM_INTERACTIVE"] = "Never";
+            if (!allowInteractiveAuth)
+                psi.Environment["GCM_INTERACTIVE"] = "Never";
 
             if (auth != null)
             {

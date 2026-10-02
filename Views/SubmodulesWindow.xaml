@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:GitSparseManager.Views"
         Title="Submodules"
-        Width="900" Height="500"
+        Width="900" Height="560"
         MinWidth="640" MinHeight="320"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
@@ -13,6 +13,28 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <views:ResourceBrushConverter x:Key="ResourceBrush"/>
+
+        <!-- Looks like a link, behaves like a button -->
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock x:Name="Label" Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Label" Property="TextDecorations" Value="Underline"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Label" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="16">
@@ -28,11 +50,16 @@
             <TextBlock Text="{Binding LoadError}" Margin="0,4,0,0" TextWrapping="Wrap"
                        Foreground="{DynamicResource DangerBrush}"
                        Visibility="{Binding HasLoadError, Converter={StaticResource BoolToVis}}"/>
+            <TextBlock Text="{Binding ResultText}" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Visibility="{Binding HasResultText, Converter={StaticResource BoolToVis}}"/>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <CheckBox Content="Show only problems" Margin="0,0,20,0"
                           IsChecked="{Binding ShowOnlyProblems}"/>
-                <CheckBox Content="Show submodules outside my checkout"
+                <CheckBox Content="Show submodules outside my checkout" Margin="0,0,20,0"
                           IsChecked="{Binding ShowOutsideCheckout}"/>
+                <Button Content="Select all with problems" Style="{StaticResource LinkButton}"
+                        VerticalAlignment="Center"
+                        Command="{Binding SelectAllWithProblemsCommand}"/>
             </StackPanel>
         </StackPanel>
 
@@ -48,6 +75,10 @@
                                 <Border Padding="10,8" BorderThickness="0,0,0,1"
                                         BorderBrush="{DynamicResource PanelBorderBrush}">
                                     <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="28"/>
                                             <ColumnDefinition Width="2*"/>
@@ -56,8 +87,11 @@
                                             <ColumnDefinition Width="2*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <!-- Reserved for a later action; nothing acts on it yet -->
-                                        <CheckBox Grid.Column="0" IsEnabled="False" VerticalAlignment="Top"/>
+                                        <CheckBox Grid.Column="0" VerticalAlignment="Top"
+                                                  IsChecked="{Binding IsSelected}"
+                                                  IsEnabled="{Binding IsSelectable}"
+                                                  ToolTip="{Binding SelectToolTip}"
+                                                  ToolTipService.ShowOnDisabled="True"/>
 
                                         <StackPanel Grid.Column="1" Margin="0,0,12,0">
                                             <TextBlock Text="{Binding Path}" FontFamily="Consolas"
@@ -65,24 +99,39 @@
                                             <TextBlock Text="{Binding Name}" FontSize="11.5"
                                                        TextTrimming="CharacterEllipsis"
                                                        Foreground="{DynamicResource MutedTextBrush}"/>
-                                            <TextBlock Text="{Binding Error}" FontSize="11.5" TextWrapping="Wrap"
-                                                       Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource DangerBrush}"
-                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
 
-                                        <TextBlock Grid.Column="2" Text="{Binding StateText}"
-                                                   FontWeight="SemiBold" TextWrapping="Wrap"
-                                                   Margin="0,0,12,0" VerticalAlignment="Top"
-                                                   ToolTip="{Binding StateToolTip}"
-                                                   Foreground="{Binding StateBrushKey, Converter={StaticResource ResourceBrush}}"/>
+                                        <!-- Full row width, left-aligned with the path text -->
+                                        <Expander Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4"
+                                                  Header="Error details" FontWeight="SemiBold" FontSize="12"
+                                                  Margin="0,6,0,0"
+                                                  Style="{StaticResource SectionExpander}"
+                                                  Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                                            <TextBox Text="{Binding Error, Mode=OneWay}" IsReadOnly="True"
+                                                     TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11.5"
+                                                     FontWeight="Normal" MaxHeight="160" Margin="0,4,0,0"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Auto"
+                                                     Background="{DynamicResource WindowBackgroundBrush}"
+                                                     Foreground="{DynamicResource WindowForegroundBrush}"/>
+                                        </Expander>
+
+                                        <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                                            <TextBlock Text="{Binding DisplayStateText}"
+                                                       FontWeight="SemiBold" TextWrapping="Wrap"
+                                                       ToolTip="{Binding StateToolTip}"
+                                                       Foreground="{Binding DisplayBrushKey, Converter={StaticResource ResourceBrush}}"/>
+                                            <TextBlock Text="{Binding StateText}" FontSize="11.5" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Visibility="{Binding ShowUnderlyingState, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
 
                                         <StackPanel Grid.Column="3" Margin="0,0,12,0">
                                             <TextBlock FontFamily="Consolas" FontSize="12">
-                                                <Run Text="pinned  " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding PinnedShortSha, Mode=OneTime}"/>
+                                                <Run Text="pinned  " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding PinnedShortSha, Mode=OneWay}"/>
                                             </TextBlock>
                                             <TextBlock FontFamily="Consolas" FontSize="12">
-                                                <Run Text="current " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding CurrentShortSha, Mode=OneTime}"/>
+                                                <Run Text="current " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding CurrentShortSha, Mode=OneWay}"/>
                                             </TextBlock>
                                         </StackPanel>
 
@@ -106,11 +155,36 @@
             </Grid>
         </Border>
 
-        <!-- Bottom -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="Refresh" Width="90" Padding="10,5" Margin="0,0,8,0"
-                    Command="{Binding RefreshCommand}"/>
-            <Button Content="Close" Width="90" Padding="10,5" IsDefault="True" IsCancel="True"/>
-        </StackPanel>
+        <!-- Bottom: options on the left, actions on the right -->
+        <Grid Grid.Row="2" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" VerticalAlignment="Bottom"
+                        IsEnabled="{Binding IsIdle}">
+                <RadioButton GroupName="SubmoduleTarget" Margin="0,0,0,4"
+                             Content="Pinned commit (what the main repo expects)"
+                             IsChecked="{Binding UsePinned}"/>
+                <RadioButton GroupName="SubmoduleTarget" Margin="0,0,0,4"
+                             Content="Latest from branch (--remote)"
+                             IsChecked="{Binding LatestFromBranch}"/>
+                <CheckBox Content="Include nested submodules (--recursive)"
+                          IsChecked="{Binding IncludeNested}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Content="Initialize selected" Style="{StaticResource AccentActionButton}"
+                        Command="{Binding InitializeSelectedCommand}"/>
+                <Button Content="Cancel" Width="90" Padding="10,5" Margin="0,0,8,0"
+                        Command="{Binding CancelRunCommand}"
+                        Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"/>
+                <Button Content="Refresh" Width="90" Padding="10,5" Margin="0,0,8,0"
+                        Command="{Binding RefreshCommand}"/>
+                <Button Content="Close" Width="90" Padding="10,5" IsDefault="True" IsCancel="True"
+                        IsEnabled="{Binding IsIdle}"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
