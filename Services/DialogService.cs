@@ -54,6 +54,12 @@ namespace GitSparseManager.Services
             window.ShowDialog();
         }
 
+        public void ShowSubmodules(SubmodulesViewModel vm)
+        {
+            var window = new SubmodulesWindow { DataContext = vm, Owner = Application.Current?.MainWindow };
+            window.ShowDialog();
+        }
+
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")
         {
             var textBox = new TextBox

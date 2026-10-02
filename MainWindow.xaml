@@ -352,6 +352,8 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="8"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" Text="Checkout:" VerticalAlignment="Center"
@@ -391,6 +393,10 @@
                             Command="{Binding ReloadCheckoutCommand}"
                             Style="{StaticResource ActionButton}" Margin="0"
                             ToolTip="Re-read the current checkout from git"/>
+                    <Button Grid.Column="7" Content="Submodules…"
+                            Command="{Binding ShowSubmodulesCommand}"
+                            Style="{StaticResource ActionButton}" Margin="0"
+                            ToolTip="Show the submodules of this checkout and their state"/>
                 </Grid>
 
                 <TextBlock Text="{Binding CheckoutSummary}" Margin="0,6,0,0"

@@ -24,6 +24,7 @@ namespace GitSparseManager.ViewModels
         private readonly IGitService _gitService;
         private readonly IRemoteTreeService _remoteTreeService;
         private readonly ICheckoutService _checkoutService;
+        private readonly ISubmoduleService _submoduleService;
 
         private IGitHostService _hostService;
         private AppSettings _appSettings;
@@ -137,7 +138,9 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private bool _scriptPanelExpanded;
 
         // ── Manage checkout ───────────────────────────────────────────────────
-        [ObservableProperty] private CheckoutInfo? _checkoutInfo;
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
+        private CheckoutInfo? _checkoutInfo;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
         [ObservableProperty] private RecentCheckout? _selectedRecentCheckout;
@@ -226,12 +229,14 @@ namespace GitSparseManager.ViewModels
             IPresetService presetService,
             IGitService gitService,
             IRemoteTreeService remoteTreeService,
-            ICheckoutService checkoutService)
+            ICheckoutService checkoutService,
+            ISubmoduleService submoduleService)
         {
             _hostServiceFactory = hostServiceFactory;
             _gitService = gitService;
             _remoteTreeService = remoteTreeService;
             _checkoutService = checkoutService;
+            _submoduleService = submoduleService;
             _commandGenerator = commandGenerator;
             _settingsService = settingsService;
             _clipboardService = clipboardService;
@@ -1015,6 +1020,21 @@ namespace GitSparseManager.ViewModels
             }
             await OpenCheckoutAsync(root);
         }
+
+        [RelayCommand(CanExecute = nameof(HasCheckout))]
+        private async Task ShowSubmodulesAsync()
+        {
+            var root = CheckoutInfo?.Root;
+            if (string.IsNullOrWhiteSpace(root)) return;
+
+            var vm = new SubmodulesViewModel(_submoduleService, root);
+            _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
+            _dialogService.ShowSubmodules(vm);
+
+            await ReloadCheckoutAsync();
+        }
+
+        private bool HasCheckout => CheckoutInfo != null;
 
         public async Task OpenCheckoutAsync(string path)
         {
