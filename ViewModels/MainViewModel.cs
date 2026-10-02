@@ -31,7 +31,8 @@ namespace GitSparseManager.ViewModels
         private CancellationTokenSource? _treeLoadCts;
 
         // Manage-mode checkout state
-        private readonly DispatcherTimer _pendingChangesTimer;
+        // Debounces live script regeneration (Clone) and pending-change recomputation (Manage).
+        private readonly DispatcherTimer _regenerateTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
         private List<string> _baselinePaths = new();
         private List<string> _addedPaths = new();
         private List<string> _removedPaths = new();
@@ -53,9 +54,13 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private ObservableCollection<Branch> _branches = new();
         [ObservableProperty] private Branch? _selectedBranch;
         [ObservableProperty] private string _branchFilterText = string.Empty;
+        [ObservableProperty] private string _repositoryFilterText = string.Empty;
 
         private ICollectionView? _branchesView;
         public ICollectionView? BranchesView => _branchesView;
+
+        private ICollectionView? _repositoriesView;
+        public ICollectionView? RepositoriesView => _repositoriesView;
 
         // ── Tree ──────────────────────────────────────────────────────────────
         [ObservableProperty] private ObservableCollection<TreeNodeViewModel> _treeNodes = new();
@@ -66,7 +71,27 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private string _selectedPathsText = string.Empty;
         [ObservableProperty] private string _generatedScript = string.Empty;
 
+        /// <summary>True when <see cref="GeneratedScript"/> is a real script rather than an explanatory comment.</summary>
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(CopyScriptCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveBatCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveShCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveManageBatCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveManageShCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ApplyManageCommand))]
+        private bool _hasValidScript;
+
         [ObservableProperty] private string _newBranchName = string.Empty;
+
+        /// <summary>Output of the last Manage apply (git warnings). Cleared when the next apply starts.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasLastApplyLog))]
+        private string _lastApplyLog = string.Empty;
+
+        public bool HasLastApplyLog => !string.IsNullOrWhiteSpace(LastApplyLog);
+
+        [ObservableProperty] private bool _scriptPanelExpanded;
 
         // ── Manage checkout ───────────────────────────────────────────────────
         [ObservableProperty] private CheckoutInfo? _checkoutInfo;
@@ -74,7 +99,10 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
         [ObservableProperty] private RecentCheckout? _selectedRecentCheckout;
         [ObservableProperty] private string _pendingChangesText = "No changes";
-        [ObservableProperty] private bool _isApplyEnabled = false;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ApplyManageCommand))]
+        private bool _isApplyEnabled = false;
 
         /// <summary>Repository root the Manage actions operate on.</summary>
         private string ManageRoot => CheckoutInfo?.Root ?? string.Empty;
@@ -83,8 +111,6 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private bool _initSubmodules = false;
         [ObservableProperty] private bool _keepWindowOpen = true;
         [ObservableProperty] private ThemeMode _selectedThemeMode = ThemeMode.System;
-
-        public IReadOnlyList<ThemeMode> ThemeModes { get; } = Enum.GetValues<ThemeMode>();
 
         // ── UI state ──────────────────────────────────────────────────────────
         [ObservableProperty] private bool _isLoading = false;
@@ -169,7 +195,14 @@ namespace GitSparseManager.ViewModels
             _dialogService = dialogService;
             _presetService = presetService;
 
+            _regenerateTimer.Tick += (_, _) =>
+            {
+                _regenerateTimer.Stop();
+                RegenerateScript();
+            };
+
             _appSettings = settingsService.LoadSettings();
+            _scriptPanelExpanded = _appSettings.ScriptPanelExpanded;
             InitSubmodules = _appSettings.InitSubmodules;
             KeepWindowOpen = _appSettings.KeepWindowOpen;
             SelectedThemeMode = _appSettings.ThemeMode;
@@ -185,17 +218,15 @@ namespace GitSparseManager.ViewModels
             _branchesView = CollectionViewSource.GetDefaultView(Branches);
             _branchesView.Filter = FilterBranch;
 
+            _repositoriesView = CollectionViewSource.GetDefaultView(Repositories);
+            _repositoriesView.Filter = FilterRepository;
+
             RecentCheckouts = new ObservableCollection<RecentCheckout>(_appSettings.RecentCheckouts);
             RefreshRecentCheckoutState();
 
-            // Ticking a large folder changes thousands of nodes; collapse that into one recompute.
-            _pendingChangesTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-            _pendingChangesTimer.Tick += (_, _) =>
-            {
-                _pendingChangesTimer.Stop();
-                RecomputePendingChanges();
-            };
-            TreeNodeViewModel.CheckedChanged += SchedulePendingChangesRecompute;
+            // Ticking a large folder changes thousands of nodes; collapse that into one regeneration.
+            TreeNodeViewModel.CheckedChanged += ScheduleRegenerate;
+            RegenerateScript();
         }
 
         private static string DefaultServerUrl(GitHostType hostType) =>
@@ -231,8 +262,9 @@ namespace GitSparseManager.ViewModels
                 Repositories.Clear();
                 Branches.Clear();
                 TreeNodes.Clear();
+                _allRootNodes.Clear();
                 SelectedPathsText = string.Empty;
-                GeneratedScript = string.Empty;
+                ScheduleRegenerate();
                 StatusMessage = $"Enter your {newValue} server URL and Personal Access Token, then click Connect.";
             }
             finally
@@ -254,13 +286,25 @@ namespace GitSparseManager.ViewModels
         {
             _appSettings.InitSubmodules = value;
             _settingsService.SaveSettings(_appSettings);
+            ScheduleRegenerate();
         }
 
         partial void OnKeepWindowOpenChanged(bool value)
         {
             _appSettings.KeepWindowOpen = value;
             _settingsService.SaveSettings(_appSettings);
+            ScheduleRegenerate();
         }
+
+        partial void OnScriptPanelExpandedChanged(bool value)
+        {
+            _appSettings.ScriptPanelExpanded = value;
+            _settingsService.SaveSettings(_appSettings);
+        }
+
+        partial void OnNewBranchNameChanged(string value) => ScheduleRegenerate();
+
+        partial void OnTargetFolderChanged(string value) => ScheduleRegenerate();
 
         partial void OnSelectedThemeModeChanged(ThemeMode value)
         {
@@ -298,6 +342,8 @@ namespace GitSparseManager.ViewModels
                 StatusMessage = "Select a repository and branch. The tree loads automatically.";
                 _ = LoadRemoteTreeAsync();
             }
+
+            RegenerateScript();
         }
 
         partial void OnSearchFilterChanged(string value) => ApplyFilter(value);
@@ -316,12 +362,26 @@ namespace GitSparseManager.ViewModels
 
             if (value != null && IsCloneMode)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
+
+            ScheduleRegenerate();
+        }
+
+        partial void OnRepositoryFilterTextChanged(string value)
+        {
+            _repositoriesView?.Refresh();
+            if (string.IsNullOrWhiteSpace(value) && SelectedRepository != null)
+                SelectedRepository = null;
         }
 
         partial void OnSelectedRepositoryChanged(Repository? value)
         {
+            if (RepositoryFilterText != (value?.PathWithNamespace ?? string.Empty))
+                RepositoryFilterText = value?.PathWithNamespace ?? string.Empty;
+
             if (value != null)
                 _ = LoadBranchesAsync();
+
+            ScheduleRegenerate();
         }
 
         // ── Commands ──────────────────────────────────────────────────────────
@@ -372,6 +432,10 @@ namespace GitSparseManager.ViewModels
             obj is Branch b && (string.IsNullOrEmpty(BranchFilterText) ||
             b.Name.Contains(BranchFilterText, StringComparison.OrdinalIgnoreCase));
 
+        private bool FilterRepository(object obj) =>
+            obj is Repository r && (string.IsNullOrEmpty(RepositoryFilterText) ||
+            r.PathWithNamespace.Contains(RepositoryFilterText, StringComparison.OrdinalIgnoreCase));
+
         private async Task LoadBranchesAsync()
         {
             if (SelectedRepository == null) return;
@@ -384,7 +448,7 @@ namespace GitSparseManager.ViewModels
             // Drop the previous repository's nodes so its selection cannot leak into the new tree
             _allRootNodes.Clear();
             SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
+            ScheduleRegenerate();
 
             try
             {
@@ -418,6 +482,7 @@ namespace GitSparseManager.ViewModels
             var roots = await Task.Run(() => BuildTree(flatNodes));
             _allRootNodes = roots;
             TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
+            ScheduleRegenerate();
         }
 
         // ── Remote tree (Clone mode) ──────────────────────────────────────────
@@ -487,18 +552,14 @@ namespace GitSparseManager.ViewModels
         }
 
         [RelayCommand]
-        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
+        private void OpenSettings() =>
+            _dialogService.ShowSettings(
+                new SettingsViewModel(SelectedThemeMode, _remoteTreeService, mode => SelectedThemeMode = mode));
 
         [RelayCommand]
-        private void ClearTreeCache()
-        {
-            var freed = _remoteTreeService.GetCacheSizeBytes();
-            _remoteTreeService.ClearCache();
-            var remaining = _remoteTreeService.GetCacheSizeBytes();
-            StatusMessage = $"Tree cache cleared — {FormatSize(Math.Max(0, freed - remaining))} freed.";
-        }
+        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
 
-        private static string FormatSize(long bytes)
+        internal static string FormatSize(long bytes)
         {
             string[] units = { "B", "KB", "MB", "GB" };
             double size = bytes;
@@ -511,56 +572,76 @@ namespace GitSparseManager.ViewModels
             return $"{size:0.#} {units[unit]}";
         }
 
-        [RelayCommand]
-        private void GenerateScript()
+        // ── Live script ───────────────────────────────────────────────────────
+
+        private void ScheduleRegenerate()
         {
-            var paths = DropFilePaths(GetSelectedPaths(), out var droppedFiles);
-            if (paths.Count == 0)
+            _regenerateTimer.Stop();
+            _regenerateTimer.Start();
+        }
+
+        /// <summary>Rebuilds the script for the active mode right away and cancels any pending rebuild.</summary>
+        private void RegenerateScript()
+        {
+            _regenerateTimer.Stop();
+            if (IsManageMode) RecomputePendingChanges();
+            else RegenerateCloneScript();
+        }
+
+        private void RegenerateCloneScript()
+        {
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
+            SelectedPathsText = string.Join(Environment.NewLine, paths);
+
+            string? problem = null;
+            if (SelectedRepository == null) problem = "Select a repository";
+            else if (string.IsNullOrWhiteSpace(SelectedBranch?.Name)) problem = "Select a branch";
+            else if (paths.Count == 0) problem = "Select at least one folder";
+
+            if (problem != null)
             {
-                StatusMessage = "No paths selected. Check items in the tree first.";
+                SetScript("rem " + problem, valid: false);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(SelectedBranch?.Name))
-            {
-                StatusMessage = "A branch must be selected before generating the script.";
-                return;
-            }
-
-            GeneratedScript = _commandGenerator.GenerateBatScript(
-                SelectedRepository?.HttpUrlToRepo ?? string.Empty,
-                SelectedBranch?.Name ?? string.Empty,
+            SetScript(_commandGenerator.GenerateBatScript(
+                SelectedRepository!.HttpUrlToRepo,
+                SelectedBranch!.Name,
                 paths,
                 TargetFolder,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
-                KeepWindowOpen);
-
-            SelectedPathsText = string.Join(Environment.NewLine, paths);
-            StatusMessage = $"Script generated for {paths.Count} path(s).{DroppedFilePathsNote(droppedFiles)}";
+                KeepWindowOpen), valid: true);
         }
 
-        [RelayCommand]
+        private void RegenerateManageScript(List<string> paths)
+        {
+            var root = ManageRoot;
+            if (string.IsNullOrWhiteSpace(root))
+                SetScript("rem Open a checkout first", valid: false);
+            else if (!Directory.Exists(Path.Combine(root, ".git")))
+                SetScript("rem The selected path is not a Git repository (no .git folder found)", valid: false);
+            else
+                SetScript(_commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removedPaths),
+                    valid: true);
+        }
+
+        private void SetScript(string script, bool valid)
+        {
+            GeneratedScript = script;
+            HasValidScript = valid;
+        }
+
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void CopyScript()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateScript();
-
-            if (!string.IsNullOrEmpty(GeneratedScript))
-            {
-                _clipboardService.CopyText(GeneratedScript);
-                StatusMessage = "Script copied to clipboard.";
-            }
+            _clipboardService.CopyText(GeneratedScript);
+            StatusMessage = "Script copied to clipboard.";
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveBat()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateScript();
-
-            if (string.IsNullOrEmpty(GeneratedScript)) return;
-
             var path = _dialogService.ShowSaveFileDialog(
                 "Batch files (*.bat)|*.bat|All files (*.*)|*.*", ".bat", "sparse-checkout");
 
@@ -571,10 +652,10 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveSh()
         {
-            var paths = GetSelectedPaths();
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
             if (paths.Count == 0)
             {
                 StatusMessage = "No paths selected.";
@@ -606,10 +687,10 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private async Task ExecuteScriptAsync()
         {
-            var paths = GetSelectedPaths();
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
             if (paths.Count == 0)
             {
                 StatusMessage = "No paths selected. Check items in the tree first.";
@@ -819,13 +900,6 @@ namespace GitSparseManager.ViewModels
 
         // ── Manage: pending changes ───────────────────────────────────────────
 
-        private void SchedulePendingChangesRecompute()
-        {
-            if (!IsManageMode) return;
-            _pendingChangesTimer.Stop();
-            _pendingChangesTimer.Start();
-        }
-
         private void RecomputePendingChanges()
         {
             var selected = GetSelectedPaths();
@@ -840,6 +914,9 @@ namespace GitSparseManager.ViewModels
             PendingChangesText = lines.Count == 0 ? "No changes" : string.Join(Environment.NewLine, lines);
             UpdateApplyEnabled();
             UpdateCheckoutSummary();
+
+            SelectedPathsText = string.Join(Environment.NewLine, selected);
+            RegenerateManageScript(selected);
         }
 
         /// <summary>
@@ -973,36 +1050,9 @@ namespace GitSparseManager.ViewModels
 
         // ── Manage mode ───────────────────────────────────────────────────────
 
-        [RelayCommand]
-        private void GenerateManageScript()
-        {
-            var root = ManageRoot;
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                StatusMessage = "Please open a checkout first.";
-                return;
-            }
-
-            if (!Directory.Exists(Path.Combine(root, ".git")))
-            {
-                StatusMessage = "The selected path does not appear to be a Git repository (no .git folder found).";
-                return;
-            }
-
-            RecomputePendingChanges();
-            var paths = GetSelectedPaths();
-            GeneratedScript = _commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removedPaths);
-            SelectedPathsText = string.Join(Environment.NewLine, paths);
-            StatusMessage = $"Manage script generated. {paths.Count} path(s) will be active.";
-        }
-
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveManageBat()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateManageScript();
-            if (string.IsNullOrEmpty(GeneratedScript)) return;
-
             var path = _dialogService.ShowSaveFileDialog(
                 "Batch files (*.bat)|*.bat|All files (*.*)|*.*", ".bat", "manage-sparse-checkout");
             if (path != null)
@@ -1012,7 +1062,7 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveManageSh()
         {
             var root = ManageRoot;
@@ -1034,7 +1084,9 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        private bool CanApplyManage => IsApplyEnabled && HasValidScript;
+
+        [RelayCommand(CanExecute = nameof(CanApplyManage))]
         private async Task ApplyManageAsync()
         {
             var info = CheckoutInfo;
@@ -1116,6 +1168,8 @@ namespace GitSparseManager.ViewModels
             string root, CheckoutInfo info, List<string> selected, List<string> added, List<string> removed,
             RemovalReviewModel? review, RemovalReviewChoices choices)
         {
+            LastApplyLog = string.Empty;
+
             // a. Changed files must go back to HEAD before git will let the folder leave the worktree.
             if (review != null && choices.DeleteChanged && review.ChangedFiles.Count > 0)
             {
@@ -1203,10 +1257,7 @@ namespace GitSparseManager.ViewModels
             {
                 parts.Add("(see warnings)");
 
-                var block = "# git warnings" + Environment.NewLine + string.Join(Environment.NewLine, warnings);
-                GeneratedScript = string.IsNullOrWhiteSpace(GeneratedScript)
-                    ? block
-                    : GeneratedScript + Environment.NewLine + Environment.NewLine + block;
+                LastApplyLog = string.Join(Environment.NewLine, warnings);
             }
 
             StatusMessage = string.Join(" ", parts);

@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
 using GitSparseManager.Models;
+using GitSparseManager.ViewModels;
 using GitSparseManager.Views;
 
 namespace GitSparseManager.Services
@@ -45,6 +46,12 @@ namespace GitSparseManager.Services
         {
             var window = new RemovalReviewWindow(model) { Owner = Application.Current?.MainWindow };
             return window.ShowDialog() == true ? window.Choices : null;
+        }
+
+        public void ShowSettings(SettingsViewModel viewModel)
+        {
+            var window = new SettingsWindow { DataContext = viewModel, Owner = Application.Current?.MainWindow };
+            window.ShowDialog();
         }
 
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")

@@ -1,4 +1,5 @@
 using GitSparseManager.Models;
+using GitSparseManager.ViewModels;
 
 namespace GitSparseManager.Services
 {
@@ -12,5 +13,8 @@ namespace GitSparseManager.Services
 
         /// <summary>Returns the user's per-group deletion choices, or null when the dialog was cancelled.</summary>
         RemovalReviewChoices? ShowRemovalReview(RemovalReviewModel model);
+
+        /// <summary>Shows the modal Settings window bound to <paramref name="viewModel"/>.</summary>
+        void ShowSettings(SettingsViewModel viewModel);
     }
 }

@@ -58,6 +58,27 @@ namespace GitSparseManager
                 vm.Token = TokenBox.Password;
         }
 
+        private void PresetMenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = PresetMenuButton.ContextMenu;
+            if (menu == null) return;
+
+            menu.DataContext = DataContext;
+            menu.PlacementTarget = PresetMenuButton;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>Sizes the right panel's script row: compact when collapsed, resizable when expanded.</summary>
+        private void ScriptExpander_Changed(object sender, RoutedEventArgs e)
+        {
+            var expanded = ((Expander)sender).IsExpanded;
+
+            ScriptSplitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            ScriptRow.MinHeight = expanded ? 120 : 0;
+            ScriptRow.Height = expanded ? new GridLength(2, GridUnitType.Star) : GridLength.Auto;
+        }
+
         private void CheckoutCombo_DropDownOpened(object sender, System.EventArgs e)
         {
             if (DataContext is MainViewModel vm)

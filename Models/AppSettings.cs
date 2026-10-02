@@ -19,5 +19,8 @@ namespace GitSparseManager.Models
         public bool InitSubmodules { get; set; } = false;
         public bool KeepWindowOpen { get; set; } = true;
         public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
+
+        /// <summary>Whether the Script expander in the main window was left open.</summary>
+        public bool ScriptPanelExpanded { get; set; } = false;
     }
 }
