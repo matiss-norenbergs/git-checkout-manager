@@ -51,7 +51,9 @@ namespace GitSparseManager.Services
         public void SaveSettings(AppSettings settings)
         {
             var json = JsonSerializer.Serialize(settings, WriteOptions);
-            File.WriteAllText(_settingsPath, json);
+            var tmp = _settingsPath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, _settingsPath, overwrite: true);
         }
 
         public string? GetDecryptedToken(AppSettings settings)

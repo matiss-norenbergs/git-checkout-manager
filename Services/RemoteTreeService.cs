@@ -232,8 +232,10 @@ namespace GitSparseManager.Services
             try
             {
                 Directory.CreateDirectory(treesDir);
-                File.WriteAllText(Path.Combine(treesDir, $"{sha}.json"),
-                                  JsonSerializer.Serialize(nodes, JsonOptions));
+                var file = Path.Combine(treesDir, $"{sha}.json");
+                var tmp = file + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(nodes, JsonOptions));
+                File.Move(tmp, file, overwrite: true);
             }
             catch
             {

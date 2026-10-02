@@ -124,6 +124,13 @@ namespace GitSparseManager.ViewModels
 
         public bool HasLastApplyLog => !string.IsNullOrWhiteSpace(LastApplyLog);
 
+        /// <summary>Folders the last Manage apply could not delete. Cleared on the next apply or when another checkout opens.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasCleanupLeftovers))]
+        private ObservableCollection<(string Path, string Reason)> _cleanupLeftovers = new();
+
+        public bool HasCleanupLeftovers => CleanupLeftovers.Count > 0;
+
         [ObservableProperty] private bool _scriptPanelExpanded;
 
         // ── Manage checkout ───────────────────────────────────────────────────
@@ -950,14 +957,18 @@ namespace GitSparseManager.ViewModels
                 if (process != null)
                 {
                     await process.WaitForExitAsync();
+                    var exitCode = process.ExitCode;
                     // 0xC000013A (-1073741510) = window closed by user
-                    StatusMessage = process.ExitCode is 0
-                        ? "Script finished successfully."
-                        : process.ExitCode is -1073741510
-                            ? "Script window was closed by the user."
-                            : $"Script finished with exit code {process.ExitCode}.";
+                    StatusMessage = exitCode switch
+                    {
+                        0 => "Checkout created.",
+                        1 => "Script failed, see the console window.",
+                        2 => "Checkout created, but some submodules failed to initialize.",
+                        -1073741510 => "Script window was closed by the user.",
+                        _ => $"Script finished with exit code {exitCode}."
+                    };
 
-                    if (process.ExitCode == 0)
+                    if (exitCode is 0 or 2)
                     {
                         if (Directory.Exists(Path.Combine(targetPath, ".git")))
                             AddOrUpdateRecentCheckout(
@@ -1004,6 +1015,12 @@ namespace GitSparseManager.ViewModels
 
         public async Task OpenCheckoutAsync(string path)
         {
+            // Reopening the same checkout (reload, retry, post-apply refresh) keeps the leftovers.
+            if (!string.Equals(Path.TrimEndingDirectorySeparator(path),
+                    Path.TrimEndingDirectorySeparator(CheckoutInfo?.Root ?? string.Empty),
+                    StringComparison.OrdinalIgnoreCase))
+                CleanupLeftovers = new();
+
             _activeCheckoutPath = path;
             IsLoading = true;
             StatusMessage = "Opening checkout…";
@@ -1361,6 +1378,7 @@ namespace GitSparseManager.ViewModels
             RemovalReviewModel? review, RemovalReviewChoices choices)
         {
             LastApplyLog = string.Empty;
+            CleanupLeftovers = new();
 
             // a. Changed files must go back to HEAD before git will let the folder leave the worktree.
             if (review != null && choices.DeleteChanged && review.ChangedFiles.Count > 0)
@@ -1428,8 +1446,9 @@ namespace GitSparseManager.ViewModels
             // Re-read everything from git so the report describes reality, not intent.
             StatusMessage = "Verifying…";
             await OpenCheckoutAsync(root);
+            CleanupLeftovers = new ObservableCollection<(string Path, string Reason)>(failures);
 
-            var failedPaths = failures.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var failedPaths =failures.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var keptPartly = removed
                 .Where(p => Directory.Exists(ToFullPath(root, p)) && !failedPaths.Contains(p))
                 .ToList();
@@ -1453,6 +1472,45 @@ namespace GitSparseManager.ViewModels
             }
 
             StatusMessage = string.Join(" ", parts);
+        }
+
+        [RelayCommand]
+        private async Task RetryCleanupAsync()
+        {
+            var root = CheckoutInfo?.Root;
+            if (string.IsNullOrWhiteSpace(root) || CleanupLeftovers.Count == 0) return;
+
+            var leftovers = CleanupLeftovers.ToList();
+            var remaining = new List<(string Path, string Reason)>();
+
+            IsLoading = true;
+            try
+            {
+                StatusMessage = "Retrying cleanup…";
+                foreach (var (path, reason) in leftovers)
+                {
+                    var full = ToFullPath(root, path);
+                    if (!Directory.Exists(full)) continue;
+                    if (!TryForceDeleteDirectory(full, out var newReason))
+                        remaining.Add((path, newReason));
+                }
+
+                await OpenCheckoutAsync(root);
+                CleanupLeftovers = new ObservableCollection<(string Path, string Reason)>(remaining);
+
+                var message = $"Cleaned up {leftovers.Count - remaining.Count} of {leftovers.Count}.";
+                if (remaining.Count > 0)
+                    message += $" Could not delete: {string.Join(", ", remaining.Select(f => $"{f.Path} ({f.Reason})"))}.";
+                StatusMessage = message;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         // ── Manage: removal review ────────────────────────────────────────────

@@ -452,14 +452,20 @@
                         ToolTip="Runs the generated batch script on this machine">
                     <TextBlock Text="Execute Locally" Foreground="White" FontWeight="SemiBold"/>
                 </Button>
-                <Button Grid.Column="1"
-                        Command="{Binding ApplyManageCommand}"
-                        Style="{StaticResource AccentActionButton}"
-                        Margin="0"
-                        Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}"
-                        ToolTip="Runs 'git sparse-checkout set' directly in the selected repository">
-                    <TextBlock Text="Apply Now" Foreground="White" FontWeight="SemiBold"/>
-                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
+                    <Button Content="Retry cleanup"
+                            Command="{Binding RetryCleanupCommand}"
+                            Style="{StaticResource ActionButton}"
+                            Visibility="{Binding HasCleanupLeftovers, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Close programs using these folders, then retry"/>
+                    <Button Command="{Binding ApplyManageCommand}"
+                            Style="{StaticResource AccentActionButton}"
+                            Margin="0"
+                            ToolTip="Runs 'git sparse-checkout set' directly in the selected repository">
+                        <TextBlock Text="Apply Now" Foreground="White" FontWeight="SemiBold"/>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

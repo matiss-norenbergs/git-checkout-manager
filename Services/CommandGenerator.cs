@@ -4,6 +4,8 @@ namespace GitSparseManager.Services
 {
     public class CommandGenerator : ICommandGenerator
     {
+        private const string BatCheck = "if errorlevel 1 goto :failed";
+
         public string GenerateBatScript(
             string repoUrl, string branch, IEnumerable<string> sparsePaths, string targetFolder,
             string? newBranch = null, bool initSubmodules = false, bool keepWindowOpen = false, string? workingDirectory = null)
@@ -17,6 +19,7 @@ namespace GitSparseManager.Services
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
                 sb.AppendLine($"cd /d \"{workingDirectory}\"");
+                sb.AppendLine(BatCheck);
                 sb.AppendLine();
             }
 
@@ -24,51 +27,50 @@ namespace GitSparseManager.Services
                 ? $"git clone --filter=blob:none --no-checkout \"{repoUrl}\""
                 : $"git clone --filter=blob:none --no-checkout \"{repoUrl}\" \"{targetFolder}\"";
             sb.AppendLine(cloneArgs);
+            sb.AppendLine(BatCheck);
             sb.AppendLine();
 
             var cdTarget = string.IsNullOrWhiteSpace(targetFolder)
                 ? RepoFolderName(repoUrl)
                 : targetFolder;
             sb.AppendLine($"cd /d \"{cdTarget}\"");
+            sb.AppendLine(BatCheck);
             sb.AppendLine();
 
             sb.AppendLine("git sparse-checkout init --cone");
+            sb.AppendLine(BatCheck);
             sb.AppendLine();
 
             if (paths.Count > 0)
             {
-                sb.Append("git sparse-checkout set");
-                foreach (var p in paths)
-                {
-                    sb.AppendLine(" ^");
-                    sb.Append($"  \"{p}\"");
-                }
-                sb.AppendLine();
+                AppendBatSparseSet(sb, paths);
+                sb.AppendLine(BatCheck);
             }
 
             sb.AppendLine();
             sb.AppendLine($"git checkout {branch}");
+            sb.AppendLine(BatCheck);
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {
                 sb.AppendLine();
                 sb.AppendLine($"git checkout -b {newBranch}");
+                sb.AppendLine(BatCheck);
             }
 
             if (initSubmodules)
             {
+                // Driven by .gitmodules so one broken entry can't hide the healthy ones; failures never abort.
                 sb.AppendLine();
-                sb.AppendLine("for /f \"usebackq tokens=2\" %%p in (`git submodule status`) do (");
-                sb.AppendLine("    if exist \"%%p\\\" git submodule update --init --remote --recursive \"%%p\"");
+                sb.AppendLine("set \"SUBFAIL=\"");
+                sb.AppendLine("if exist .gitmodules (");
+                sb.AppendLine("    for /f \"usebackq tokens=1*\" %%a in (`git config -f .gitmodules --get-regexp \"^submodule\\..*\\.path$\"`) do (");
+                sb.AppendLine("        if exist \"%%b\\\" ( git submodule update --init --remote --recursive -- \"%%b\" || set SUBFAIL=1 )");
+                sb.AppendLine("    )");
                 sb.AppendLine(")");
             }
 
-            if (keepWindowOpen)
-            {
-                sb.AppendLine();
-                sb.AppendLine("pause");
-            }
-
+            AppendBatEnd(sb, keepWindowOpen, initSubmodules);
             return sb.ToString();
         }
 
@@ -79,64 +81,54 @@ namespace GitSparseManager.Services
             var paths = sparsePaths.ToList();
             var sb = new StringBuilder();
 
-            sb.AppendLine("#!/bin/bash");
-            sb.AppendLine();
+            AppendShHeader(sb, keepWindowOpen);
 
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
-                sb.AppendLine($"cd \"{workingDirectory}\"");
+                sb.AppendLine($"cd \"{workingDirectory}\" || fail");
                 sb.AppendLine();
             }
 
             var cloneArgs = string.IsNullOrWhiteSpace(targetFolder)
                 ? $"git clone --filter=blob:none --no-checkout \"{repoUrl}\""
                 : $"git clone --filter=blob:none --no-checkout \"{repoUrl}\" \"{targetFolder}\"";
-            sb.AppendLine(cloneArgs);
+            sb.AppendLine($"{cloneArgs} || fail");
             sb.AppendLine();
 
             var cdTarget = string.IsNullOrWhiteSpace(targetFolder)
                 ? RepoFolderName(repoUrl)
                 : targetFolder;
-            sb.AppendLine($"cd \"{cdTarget}\"");
+            sb.AppendLine($"cd \"{cdTarget}\" || fail");
             sb.AppendLine();
 
-            sb.AppendLine("git sparse-checkout init --cone");
+            sb.AppendLine("git sparse-checkout init --cone || fail");
             sb.AppendLine();
 
             if (paths.Count > 0)
-            {
-                sb.Append("git sparse-checkout set");
-                foreach (var p in paths)
-                {
-                    sb.AppendLine(" \\");
-                    sb.Append($"  \"{p}\"");
-                }
-                sb.AppendLine();
-            }
+                AppendShSparseSet(sb, paths);
 
             sb.AppendLine();
-            sb.AppendLine($"git checkout {branch}");
+            sb.AppendLine($"git checkout {branch} || fail");
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {
                 sb.AppendLine();
-                sb.AppendLine($"git checkout -b {newBranch}");
+                sb.AppendLine($"git checkout -b {newBranch} || fail");
             }
 
             if (initSubmodules)
             {
+                // Process substitution (not a pipe) keeps the loop in this shell so SUBFAIL survives.
                 sb.AppendLine();
-                sb.AppendLine("git submodule status | awk '{print $2}' | while read p; do");
-                sb.AppendLine("    [ -d \"$p\" ] && git submodule update --init --remote --recursive \"$p\"");
-                sb.AppendLine("done");
+                sb.AppendLine("SUBFAIL=0");
+                sb.AppendLine("if [ -f .gitmodules ]; then");
+                sb.AppendLine("    while read -r key path; do");
+                sb.AppendLine("        [ -d \"$path\" ] && { git submodule update --init --remote --recursive -- \"$path\" || SUBFAIL=1; }");
+                sb.AppendLine("    done < <(git config -f .gitmodules --get-regexp '^submodule\\..*\\.path$')");
+                sb.AppendLine("fi");
             }
 
-            if (keepWindowOpen)
-            {
-                sb.AppendLine();
-                sb.AppendLine("read -rsp $'\\nPress any key to continue...\\n' -n1");
-            }
-
+            AppendShEnd(sb, keepWindowOpen, initSubmodules);
             return sb.ToString();
         }
 
@@ -149,6 +141,7 @@ namespace GitSparseManager.Services
             sb.AppendLine("@echo off");
             sb.AppendLine();
             sb.AppendLine($"cd /d \"{localRepoPath}\"");
+            sb.AppendLine(BatCheck);
             sb.AppendLine();
 
             if (removed.Count > 0)
@@ -160,26 +153,19 @@ namespace GitSparseManager.Services
                 sb.Append("git restore --");
                 foreach (var p in removed) sb.Append($" \"{p}\"");
                 sb.AppendLine();
+                sb.AppendLine(BatCheck);
                 sb.Append("git clean -ffdx");
                 foreach (var p in removed) sb.Append($" \"{p}\"");
                 sb.AppendLine();
+                sb.AppendLine(BatCheck);
                 sb.AppendLine();
             }
 
             if (paths.Count > 0)
-            {
-                sb.Append("git sparse-checkout set");
-                foreach (var p in paths)
-                {
-                    sb.AppendLine(" ^");
-                    sb.Append($"  \"{p}\"");
-                }
-                sb.AppendLine();
-            }
+                AppendBatSparseSet(sb, paths);
             else
-            {
                 sb.AppendLine("git sparse-checkout set");
-            }
+            sb.AppendLine(BatCheck);
 
             if (removed.Count > 0)
             {
@@ -189,12 +175,7 @@ namespace GitSparseManager.Services
                     sb.AppendLine($"if exist \"{p}\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path '{p}'\"");
             }
 
-            if (keepWindowOpen)
-            {
-                sb.AppendLine();
-                sb.AppendLine("pause");
-            }
-
+            AppendBatEnd(sb, keepWindowOpen, false);
             return sb.ToString();
         }
 
@@ -204,9 +185,8 @@ namespace GitSparseManager.Services
             var removed = removedPaths?.ToList() ?? new List<string>();
             var sb = new StringBuilder();
 
-            sb.AppendLine("#!/bin/bash");
-            sb.AppendLine();
-            sb.AppendLine($"cd \"{localRepoPath}\"");
+            AppendShHeader(sb, keepWindowOpen);
+            sb.AppendLine($"cd \"{localRepoPath}\" || fail");
             sb.AppendLine();
 
             if (removed.Count > 0)
@@ -217,27 +197,17 @@ namespace GitSparseManager.Services
                 sb.AppendLine("read -rsp $'\\nFiles listed above will be removed. Press any key to continue or Ctrl+C to abort...\\n' -n1");
                 sb.Append("git restore --");
                 foreach (var p in removed) sb.Append($" \"{p}\"");
-                sb.AppendLine();
+                sb.AppendLine(" || fail");
                 sb.Append("git clean -ffdx");
                 foreach (var p in removed) sb.Append($" \"{p}\"");
-                sb.AppendLine();
+                sb.AppendLine(" || fail");
                 sb.AppendLine();
             }
 
             if (paths.Count > 0)
-            {
-                sb.Append("git sparse-checkout set");
-                foreach (var p in paths)
-                {
-                    sb.AppendLine(" \\");
-                    sb.Append($"  \"{p}\"");
-                }
-                sb.AppendLine();
-            }
+                AppendShSparseSet(sb, paths);
             else
-            {
-                sb.AppendLine("git sparse-checkout set");
-            }
+                sb.AppendLine("git sparse-checkout set || fail");
 
             if (removed.Count > 0)
             {
@@ -246,13 +216,104 @@ namespace GitSparseManager.Services
                     sb.AppendLine($"[ -d \"{p}\" ] && rm -rf \"{p}\"");
             }
 
+            AppendShEnd(sb, keepWindowOpen, false);
+            return sb.ToString();
+        }
+
+        private static void AppendBatSparseSet(StringBuilder sb, List<string> paths)
+        {
+            sb.Append("git sparse-checkout set");
+            foreach (var p in paths)
+            {
+                sb.AppendLine(" ^");
+                sb.Append($"  \"{p}\"");
+            }
+            sb.AppendLine();
+        }
+
+        private static void AppendShSparseSet(StringBuilder sb, List<string> paths)
+        {
+            sb.Append("git sparse-checkout set");
+            foreach (var p in paths)
+            {
+                sb.AppendLine(" \\");
+                sb.Append($"  \"{p}\"");
+            }
+            sb.AppendLine(" || fail");
+        }
+
+        private static void AppendBatEnd(StringBuilder sb, bool keepWindowOpen, bool trackSubmodules)
+        {
+            if (keepWindowOpen)
+            {
+                sb.AppendLine();
+                sb.AppendLine("pause");
+            }
+
+            sb.AppendLine();
+            if (trackSubmodules)
+            {
+                // Something to read, so pause even when the success path wouldn't (once, not twice).
+                if (keepWindowOpen)
+                {
+                    sb.AppendLine("if defined SUBFAIL exit /b 2");
+                }
+                else
+                {
+                    sb.AppendLine("if defined SUBFAIL (");
+                    sb.AppendLine("    echo.");
+                    sb.AppendLine("    echo Some submodules failed to initialize - see the output above");
+                    sb.AppendLine("    pause");
+                    sb.AppendLine("    exit /b 2");
+                    sb.AppendLine(")");
+                }
+            }
+            sb.AppendLine("exit /b 0");
+            sb.AppendLine();
+            sb.AppendLine(":failed");
+            sb.AppendLine("echo.");
+            // ASCII hyphen: cmd reads the file in the OEM code page, where an em dash would be garbled.
+            sb.AppendLine("echo FAILED - see the output above");
+            sb.AppendLine("pause");
+            sb.AppendLine("exit /b 1");
+        }
+
+        private static void AppendShHeader(StringBuilder sb, bool keepWindowOpen)
+        {
+            sb.AppendLine("#!/bin/bash");
+            sb.AppendLine();
+            sb.AppendLine("fail() {");
+            sb.AppendLine("    echo");
+            sb.AppendLine("    echo \"FAILED — see the output above\"");
+            sb.AppendLine("    read -rsp $'\\nPress any key to continue...\\n' -n1");
+            sb.AppendLine("    exit 1");
+            sb.AppendLine("}");
+            sb.AppendLine();
+        }
+
+        private static void AppendShEnd(StringBuilder sb, bool keepWindowOpen, bool trackSubmodules)
+        {
             if (keepWindowOpen)
             {
                 sb.AppendLine();
                 sb.AppendLine("read -rsp $'\\nPress any key to continue...\\n' -n1");
             }
 
-            return sb.ToString();
+            sb.AppendLine();
+            if (trackSubmodules)
+            {
+                // Something to read, so pause even when the success path wouldn't (once, not twice).
+                sb.AppendLine("if [ \"$SUBFAIL\" = 1 ]; then");
+                if (!keepWindowOpen)
+                {
+                    sb.AppendLine("    echo");
+                    sb.AppendLine("    echo \"Some submodules failed to initialize — see the output above\"");
+                    sb.AppendLine("    read -rsp $'\\nPress any key to continue...\\n' -n1");
+                }
+                sb.AppendLine("    exit 2");
+                sb.AppendLine("fi");
+            }
+            sb.AppendLine("exit 0");
         }
 
         private static string RepoFolderName(string repoUrl) =>
