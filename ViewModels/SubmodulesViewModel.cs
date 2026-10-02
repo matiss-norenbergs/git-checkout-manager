@@ -149,6 +149,7 @@ namespace GitSparseManager.ViewModels
             // Backing fields: restoring the saved choice must not write the settings file again.
             _latestFromBranch = settings.SubmoduleLatestFromBranch;
             _includeNested = settings.SubmoduleIncludeNested;
+            _showOnlyProblems = settings.SubmodulesShowOnlyProblems;
         }
 
         public ObservableCollection<SubmoduleRowViewModel> Rows { get; } = new();
@@ -175,7 +176,7 @@ namespace GitSparseManager.ViewModels
 
         public bool HasLoadError => LoadError.Length > 0;
 
-        [ObservableProperty] private bool _showOnlyProblems = true;
+        [ObservableProperty] private bool _showOnlyProblems;
         [ObservableProperty] private bool _showOutsideCheckout;
 
         [ObservableProperty] private string _summaryText = "Loading submodules…";
@@ -219,7 +220,13 @@ namespace GitSparseManager.ViewModels
 
         public bool HasEmptyText => EmptyText.Length > 0;
 
-        partial void OnShowOnlyProblemsChanged(bool value) => ApplyFilter();
+        partial void OnShowOnlyProblemsChanged(bool value)
+        {
+            _settings.SubmodulesShowOnlyProblems = value;
+            _settingsService.SaveSettings(_settings);
+            ApplyFilter();
+        }
+
         partial void OnShowOutsideCheckoutChanged(bool value) => ApplyFilter();
 
         [RelayCommand(CanExecute = nameof(CanRefresh))]

@@ -393,7 +393,8 @@
                          Text="{Binding FolderName, UpdateSourceTrigger=PropertyChanged}"
                          VerticalAlignment="Center" Padding="5,4" Margin="0,4,0,0"
                          ToolTip="Name of the checkout folder. Generated from the pattern in Settings until you edit it."/>
-                <Button Grid.Row="1" Grid.Column="2" Content="↺" Margin="6,4,0,0" Padding="10,4"
+                <Button Grid.Row="1" Grid.Column="2" Content="Auto" Margin="6,4,0,0" Padding="10,4"
+                        Style="{StaticResource ActionButton}"
                         Command="{Binding ResetFolderNameCommand}"
                         ToolTip="Use automatic name"/>
 

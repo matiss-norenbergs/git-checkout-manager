@@ -29,6 +29,9 @@ namespace GitSparseManager.Models
         /// <summary>Submodules window: also initialize nested submodules (--recursive).</summary>
         public bool SubmoduleIncludeNested { get; set; } = true;
 
+        /// <summary>Submodules window: list only submodules that need attention.</summary>
+        public bool SubmodulesShowOnlyProblems { get; set; } = false;
+
         public const string DefaultFolderNamePattern = "{repo}_{branch}";
 
         /// <summary>Folder where Clone checkouts are created; remembered between runs.</summary>

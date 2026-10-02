@@ -42,6 +42,11 @@
     <SolidColorBrush x:Key="AccentBorderBrush" Color="#FF1B78B6"/>
     <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFFFF"/>
 
+    <SolidColorBrush x:Key="ScrollBarTrackBrush" Color="#00000000"/>
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#FF5A5D5E"/>
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#FF7A7D7E"/>
+    <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#FF9A9D9E"/>
+
     <SolidColorBrush x:Key="OverlayBrush" Color="#70000000"/>
     <SolidColorBrush x:Key="DialogBackgroundBrush" Color="#FF2D2D30"/>
     <SolidColorBrush x:Key="DialogBorderBrush" Color="#FF666666"/>
