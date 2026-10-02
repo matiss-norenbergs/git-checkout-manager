@@ -42,6 +42,9 @@ namespace GitSparseManager.ViewModels
         // Path of the checkout being opened or already open; guards against re-opening on selection echoes.
         private string? _activeCheckoutPath;
 
+        // .bat files carry `chcp 65001`, so cmd needs UTF-8 and a BOM would break the first line.
+        private static readonly System.Text.UTF8Encoding Utf8NoBom = new(false);
+
         // ── Connection ────────────────────────────────────────────────────────
         [ObservableProperty] private string _serverUrl = "http://gitlab.local";
         [ObservableProperty] private string _token = string.Empty;
@@ -860,7 +863,7 @@ namespace GitSparseManager.ViewModels
 
             if (path != null)
             {
-                File.WriteAllText(path, GeneratedScript);
+                File.WriteAllText(path, GeneratedScript, Utf8NoBom);
                 StatusMessage = $"Script saved to {path}";
             }
         }
@@ -943,7 +946,7 @@ namespace GitSparseManager.ViewModels
             var tempFile = Path.Combine(Path.GetTempPath(), $"sparse_{Guid.NewGuid():N}.bat");
             try
             {
-                File.WriteAllText(tempFile, scriptToRun);
+                File.WriteAllText(tempFile, scriptToRun, Utf8NoBom);
 
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
@@ -1266,7 +1269,7 @@ namespace GitSparseManager.ViewModels
                 "Batch files (*.bat)|*.bat|All files (*.*)|*.*", ".bat", "manage-sparse-checkout");
             if (path != null)
             {
-                File.WriteAllText(path, GeneratedScript);
+                File.WriteAllText(path, GeneratedScript, Utf8NoBom);
                 StatusMessage = $"Script saved to {path}";
             }
         }

@@ -14,18 +14,19 @@ namespace GitSparseManager.Services
             var sb = new StringBuilder();
 
             sb.AppendLine("@echo off");
+            sb.AppendLine("chcp 65001 >nul");
             sb.AppendLine();
 
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
-                sb.AppendLine($"cd /d \"{workingDirectory}\"");
+                sb.AppendLine($"cd /d \"{BatEscape(workingDirectory)}\"");
                 sb.AppendLine(BatCheck);
                 sb.AppendLine();
             }
 
             var cloneArgs = string.IsNullOrWhiteSpace(targetFolder)
-                ? $"git clone --filter=blob:none --no-checkout \"{repoUrl}\""
-                : $"git clone --filter=blob:none --no-checkout \"{repoUrl}\" \"{targetFolder}\"";
+                ? $"git clone --filter=blob:none --no-checkout \"{BatEscape(repoUrl)}\""
+                : $"git clone --filter=blob:none --no-checkout \"{BatEscape(repoUrl)}\" \"{BatEscape(targetFolder)}\"";
             sb.AppendLine(cloneArgs);
             sb.AppendLine(BatCheck);
             sb.AppendLine();
@@ -33,7 +34,7 @@ namespace GitSparseManager.Services
             var cdTarget = string.IsNullOrWhiteSpace(targetFolder)
                 ? RepoFolderName(repoUrl)
                 : targetFolder;
-            sb.AppendLine($"cd /d \"{cdTarget}\"");
+            sb.AppendLine($"cd /d \"{BatEscape(cdTarget)}\"");
             sb.AppendLine(BatCheck);
             sb.AppendLine();
 
@@ -48,13 +49,13 @@ namespace GitSparseManager.Services
             }
 
             sb.AppendLine();
-            sb.AppendLine($"git checkout {branch}");
+            sb.AppendLine($"git checkout \"{BatEscape(branch)}\"");
             sb.AppendLine(BatCheck);
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {
                 sb.AppendLine();
-                sb.AppendLine($"git checkout -b {newBranch}");
+                sb.AppendLine($"git checkout -b \"{BatEscape(newBranch)}\"");
                 sb.AppendLine(BatCheck);
             }
 
@@ -85,20 +86,20 @@ namespace GitSparseManager.Services
 
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
-                sb.AppendLine($"cd \"{workingDirectory}\" || fail");
+                sb.AppendLine($"cd {ShQuote(workingDirectory)} || fail");
                 sb.AppendLine();
             }
 
             var cloneArgs = string.IsNullOrWhiteSpace(targetFolder)
-                ? $"git clone --filter=blob:none --no-checkout \"{repoUrl}\""
-                : $"git clone --filter=blob:none --no-checkout \"{repoUrl}\" \"{targetFolder}\"";
+                ? $"git clone --filter=blob:none --no-checkout {ShQuote(repoUrl)}"
+                : $"git clone --filter=blob:none --no-checkout {ShQuote(repoUrl)} {ShQuote(targetFolder)}";
             sb.AppendLine($"{cloneArgs} || fail");
             sb.AppendLine();
 
             var cdTarget = string.IsNullOrWhiteSpace(targetFolder)
                 ? RepoFolderName(repoUrl)
                 : targetFolder;
-            sb.AppendLine($"cd \"{cdTarget}\" || fail");
+            sb.AppendLine($"cd {ShQuote(cdTarget)} || fail");
             sb.AppendLine();
 
             sb.AppendLine("git sparse-checkout init --cone || fail");
@@ -108,12 +109,12 @@ namespace GitSparseManager.Services
                 AppendShSparseSet(sb, paths);
 
             sb.AppendLine();
-            sb.AppendLine($"git checkout {branch} || fail");
+            sb.AppendLine($"git checkout {ShQuote(branch)} || fail");
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {
                 sb.AppendLine();
-                sb.AppendLine($"git checkout -b {newBranch} || fail");
+                sb.AppendLine($"git checkout -b {ShQuote(newBranch)} || fail");
             }
 
             if (initSubmodules)
@@ -129,7 +130,7 @@ namespace GitSparseManager.Services
             }
 
             AppendShEnd(sb, keepWindowOpen, initSubmodules);
-            return sb.ToString();
+            return ToLf(sb);
         }
 
         public string GenerateManageBatScript(string localRepoPath, IEnumerable<string> allDesiredPaths, bool keepWindowOpen = false, IEnumerable<string>? removedPaths = null)
@@ -139,23 +140,24 @@ namespace GitSparseManager.Services
             var sb = new StringBuilder();
 
             sb.AppendLine("@echo off");
+            sb.AppendLine("chcp 65001 >nul");
             sb.AppendLine();
-            sb.AppendLine($"cd /d \"{localRepoPath}\"");
+            sb.AppendLine($"cd /d \"{BatEscape(localRepoPath)}\"");
             sb.AppendLine(BatCheck);
             sb.AppendLine();
 
             if (removed.Count > 0)
             {
                 sb.Append("git clean -ffdxn");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" \"{BatEscape(p)}\"");
                 sb.AppendLine();
                 sb.AppendLine("pause");
                 sb.Append("git restore --");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" \"{BatEscape(p)}\"");
                 sb.AppendLine();
                 sb.AppendLine(BatCheck);
                 sb.Append("git clean -ffdx");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" \"{BatEscape(p)}\"");
                 sb.AppendLine();
                 sb.AppendLine(BatCheck);
                 sb.AppendLine();
@@ -172,7 +174,7 @@ namespace GitSparseManager.Services
                 sb.AppendLine();
                 // PowerShell Remove-Item handles read-only files and nested .git dirs that rmdir cannot
                 foreach (var p in removed)
-                    sb.AppendLine($"if exist \"{p}\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path '{p}'\"");
+                    sb.AppendLine($"if exist \"{BatEscape(p)}\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path '{BatEscape(p)}'\"");
             }
 
             AppendBatEnd(sb, keepWindowOpen, false);
@@ -186,20 +188,20 @@ namespace GitSparseManager.Services
             var sb = new StringBuilder();
 
             AppendShHeader(sb, keepWindowOpen);
-            sb.AppendLine($"cd \"{localRepoPath}\" || fail");
+            sb.AppendLine($"cd {ShQuote(localRepoPath)} || fail");
             sb.AppendLine();
 
             if (removed.Count > 0)
             {
                 sb.Append("git clean -ffdxn");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" {ShQuote(p)}");
                 sb.AppendLine();
                 sb.AppendLine("read -rsp $'\\nFiles listed above will be removed. Press any key to continue or Ctrl+C to abort...\\n' -n1");
                 sb.Append("git restore --");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" {ShQuote(p)}");
                 sb.AppendLine(" || fail");
                 sb.Append("git clean -ffdx");
-                foreach (var p in removed) sb.Append($" \"{p}\"");
+                foreach (var p in removed) sb.Append($" {ShQuote(p)}");
                 sb.AppendLine(" || fail");
                 sb.AppendLine();
             }
@@ -213,11 +215,11 @@ namespace GitSparseManager.Services
             {
                 sb.AppendLine();
                 foreach (var p in removed)
-                    sb.AppendLine($"[ -d \"{p}\" ] && rm -rf \"{p}\"");
+                    sb.AppendLine($"[ -d {ShQuote(p)} ] && rm -rf {ShQuote(p)}");
             }
 
             AppendShEnd(sb, keepWindowOpen, false);
-            return sb.ToString();
+            return ToLf(sb);
         }
 
         private static void AppendBatSparseSet(StringBuilder sb, List<string> paths)
@@ -226,7 +228,7 @@ namespace GitSparseManager.Services
             foreach (var p in paths)
             {
                 sb.AppendLine(" ^");
-                sb.Append($"  \"{p}\"");
+                sb.Append($"  \"{BatEscape(p)}\"");
             }
             sb.AppendLine();
         }
@@ -237,7 +239,7 @@ namespace GitSparseManager.Services
             foreach (var p in paths)
             {
                 sb.AppendLine(" \\");
-                sb.Append($"  \"{p}\"");
+                sb.Append($"  {ShQuote(p)}");
             }
             sb.AppendLine(" || fail");
         }
@@ -262,7 +264,7 @@ namespace GitSparseManager.Services
                 {
                     sb.AppendLine("if defined SUBFAIL (");
                     sb.AppendLine("    echo.");
-                    sb.AppendLine("    echo Some submodules failed to initialize - see the output above");
+                    sb.AppendLine("    echo Some submodules failed to initialize — see the output above");
                     sb.AppendLine("    pause");
                     sb.AppendLine("    exit /b 2");
                     sb.AppendLine(")");
@@ -272,8 +274,7 @@ namespace GitSparseManager.Services
             sb.AppendLine();
             sb.AppendLine(":failed");
             sb.AppendLine("echo.");
-            // ASCII hyphen: cmd reads the file in the OEM code page, where an em dash would be garbled.
-            sb.AppendLine("echo FAILED - see the output above");
+            sb.AppendLine("echo FAILED — see the output above");
             sb.AppendLine("pause");
             sb.AppendLine("exit /b 1");
         }
@@ -315,6 +316,12 @@ namespace GitSparseManager.Services
             }
             sb.AppendLine("exit 0");
         }
+
+        private static string BatEscape(string value) => value.Replace("%", "%%");
+
+        private static string ShQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+        private static string ToLf(StringBuilder sb) => sb.ToString().Replace("\r\n", "\n");
 
         private static string RepoFolderName(string repoUrl) =>
             repoUrl.TrimEnd('/').Split('/').Last().Replace(".git", "", StringComparison.OrdinalIgnoreCase);
