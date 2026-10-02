@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+_buildverify/
+
+# Visual Studio user-specific files
+*.user
+*.suo
+.vs/
+
+# NuGet packages
+*.nupkg
+packages/
+# NuGet restore artifacts (kept in obj/, already covered above)
+
+# Roslyn incremental build
+*.AssemblyInfo.cs
+
+# Windows thumbnail cache
+Thumbs.db
+desktop.ini
+
+# OS files
+.DS_Store
