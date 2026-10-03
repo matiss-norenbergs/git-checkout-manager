@@ -29,6 +29,34 @@ public class FolderNameBuilderTests
     }
 
     [Fact]
+    public void Empty_token_yields_empty_name()
+    {
+        Assert.Equal(string.Empty, FolderNameBuilder.Build("{repo}_{branch}", "repo", null, null));
+        Assert.Equal(string.Empty, FolderNameBuilder.Build("{repo}_{branch}", "repo", " ", ""));
+        Assert.Equal(string.Empty, FolderNameBuilder.Build("{repo}_{base}", "repo", "topic", null));
+    }
+
+    [Fact]
+    public void Unused_empty_token_is_ignored()
+    {
+        Assert.Equal("repo", FolderNameBuilder.Build("{repo}", "repo", null, null));
+    }
+
+    [Fact]
+    public void Leading_and_trailing_separators_are_trimmed()
+    {
+        Assert.Equal("repo", FolderNameBuilder.Build("_-. {repo} .-_", "repo", null, "main"));
+        Assert.Equal("repo_main", FolderNameBuilder.Build("{repo}_{branch}_", "repo", null, "main"));
+    }
+
+    [Fact]
+    public void Repeated_separators_are_collapsed()
+    {
+        Assert.Equal("a_b", FolderNameBuilder.Build("a__b", null, null, null));
+        Assert.Equal("repo_feature-x", FolderNameBuilder.Build("{repo}__{branch}", "repo", null, "feature//x"));
+    }
+
+    [Fact]
     public void Trailing_dots_and_spaces_are_trimmed()
     {
         Assert.Equal("repo", FolderNameBuilder.Build("{repo}. . ", "repo", null, "main"));
