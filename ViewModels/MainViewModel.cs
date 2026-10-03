@@ -109,6 +109,9 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
         private bool _hasDestinationError;
 
+        /// <summary>True when the preview is only a prompt (nothing selected yet), not a user mistake.</summary>
+        [ObservableProperty] private bool _isDestinationHint;
+
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(NewBranchHint))]
         [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
@@ -464,10 +467,21 @@ namespace GitCheckoutManager.ViewModels
             }
 
             string? error = null;
+            var isHint = false;
             var path = string.Empty;
 
             if (string.IsNullOrWhiteSpace(CloneParentFolder))
                 error = "Choose where to clone";
+            else if (IsFolderNameAuto && SelectedRepository == null && string.IsNullOrWhiteSpace(FolderName))
+            {
+                error = "Select a repository";
+                isHint = true;
+            }
+            else if (IsFolderNameAuto && string.IsNullOrWhiteSpace(FolderName))
+            {
+                error = "Select a branch";
+                isHint = true;
+            }
             else if (!IsValidFolderName(FolderName))
                 error = "Folder name is invalid";
             else if (CloneParentFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
@@ -488,6 +502,7 @@ namespace GitCheckoutManager.ViewModels
             }
 
             HasDestinationError = error != null;
+            IsDestinationHint = isHint;
             DestinationPreview = error == null
                 ? "→ " + path
                 : path.Length == 0 ? error : $"→ {path} — {error}";
