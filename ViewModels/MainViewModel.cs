@@ -1073,6 +1073,7 @@ namespace GitCheckoutManager.ViewModels
             if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))
                 return;
 
+            DismissSubmoduleBar();
             IsLoading = true;
             StatusMessage = "Executing script…";
 
@@ -1114,6 +1115,9 @@ namespace GitCheckoutManager.ViewModels
 
                         UpdateDestination();
                     }
+
+                    if (exitCode == 2 && Directory.Exists(targetPath))
+                        ShowSubmoduleBar(targetPath);
                 }
             }
             catch (Exception ex)
@@ -1149,15 +1153,51 @@ namespace GitCheckoutManager.ViewModels
             await OpenCheckoutAsync(root);
         }
 
+        // ── Post-clone bar: some submodules failed ────────────────────────────
+        [ObservableProperty] private bool _isSubmoduleBarVisible;
+        [ObservableProperty] private string _submoduleBarMessage = string.Empty;
+        private string? _submoduleBarPath;
+
+        private void ShowSubmoduleBar(string checkoutPath)
+        {
+            var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(checkoutPath));
+            _submoduleBarPath = checkoutPath;
+            SubmoduleBarMessage = $"Some submodules need attention in {name}.";
+            IsSubmoduleBarVisible = true;
+        }
+
+        [RelayCommand]
+        private void DismissSubmoduleBar()
+        {
+            IsSubmoduleBarVisible = false;
+            _submoduleBarPath = null;
+        }
+
+        [RelayCommand]
+        private async Task ReviewSubmodulesAsync()
+        {
+            var path = _submoduleBarPath;
+            DismissSubmoduleBar();
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            ActiveMode = AppMode.Manage;
+            await OpenCheckoutAsync(path);
+
+            if (CheckoutInfo != null)
+                await ShowSubmodulesCoreAsync(onlyProblems: true);
+        }
+
         [RelayCommand(CanExecute = nameof(HasCheckout))]
-        private async Task ShowSubmodulesAsync()
+        private Task ShowSubmodulesAsync() => ShowSubmodulesCoreAsync(onlyProblems: false);
+
+        private async Task ShowSubmodulesCoreAsync(bool onlyProblems)
         {
             var root = CheckoutInfo?.Root;
             if (string.IsNullOrWhiteSpace(root)) return;
 
             var vm = new SubmodulesViewModel(
                 _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService,
-                () => Repositories.ToList());
+                () => Repositories.ToList(), CheckoutInfo, _clipboardService.CopyText, onlyProblems);
             _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
             _dialogService.ShowSubmodules(vm);
 
@@ -1185,6 +1225,12 @@ namespace GitCheckoutManager.ViewModels
 
         public async Task OpenCheckoutAsync(string path)
         {
+            // Opening a different checkout makes the post-clone hint stale.
+            if (_submoduleBarPath != null &&
+                !string.Equals(Path.TrimEndingDirectorySeparator(path),
+                    Path.TrimEndingDirectorySeparator(_submoduleBarPath), StringComparison.OrdinalIgnoreCase))
+                DismissSubmoduleBar();
+
             // Reopening the same checkout (reload, retry, post-apply refresh) keeps the leftovers.
             if (!string.Equals(Path.TrimEndingDirectorySeparator(path),
                     Path.TrimEndingDirectorySeparator(CheckoutInfo?.Root ?? string.Empty),

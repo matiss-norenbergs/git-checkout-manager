@@ -27,17 +27,7 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
         private bool _isCheckingForUpdates;
 
-        public string VersionText { get; } = "Git Checkout Manager – Version " + GetAppVersion();
-
-        private static string GetAppVersion()
-        {
-            var info = System.Reflection.Assembly.GetExecutingAssembly()
-                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
-                .FirstOrDefault()?.InformationalVersion;
-            // Strip the "+commit" build metadata the SDK appends.
-            return info?.Split('+')[0] ?? "?";
-        }
+        public string VersionText { get; } = "Git Checkout Manager – Version " + AppVersion.Current;
 
         public SettingsViewModel(ThemeMode currentTheme, string folderNamePattern,
             IRemoteTreeService remoteTreeService, Action<ThemeMode> applyTheme,

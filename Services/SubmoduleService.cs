@@ -12,6 +12,9 @@ namespace GitCheckoutManager.Services
         private const string GitlinkMode = "160000";
         private const int MaxParallelGitCalls = 8;
 
+        /// <summary>Deepest nesting level that is listed (top-level submodules are depth 0).</summary>
+        private const int MaxDepth = 5;
+
         /// <summary>Local-config marker written next to an overridden URL, so the app can tell its own override from git's.</summary>
         private const string OverrideKey = "gcmUrlOverride";
 
@@ -21,32 +24,70 @@ namespace GitCheckoutManager.Services
 
         public async Task<List<SubmoduleInfo>> ListAsync(string root, CancellationToken ct = default)
         {
-            var pinned = await GetPinnedAsync(root, ct);
+            using var gate = new SemaphoreSlim(MaxParallelGitCalls);
+            return await ListRepoAsync(root, string.Empty, 0, gate, ct);
+        }
+
+        /// <summary>Lists one repository's submodules, each followed by the submodules found inside its populated folder.</summary>
+        private async Task<List<SubmoduleInfo>> ListRepoAsync(
+            string repoRoot, string displayPrefix, int depth, SemaphoreSlim gate, CancellationToken ct)
+        {
+            var pinned = await GetPinnedAsync(repoRoot, ct);
             if (pinned.Count == 0) return new List<SubmoduleInfo>();
 
-            var byPath = await GetGitmodulesAsync(root, ct);
+            var byPath = await GetGitmodulesAsync(repoRoot, ct);
 
-            using var gate = new SemaphoreSlim(MaxParallelGitCalls);
             var tasks = pinned.Select(async entry =>
             {
                 await gate.WaitAsync(ct);
-                try { return await BuildAsync(root, entry.Path, entry.Sha, byPath, ct); }
+                try { return await BuildAsync(repoRoot, entry.Path, entry.Sha, byPath, displayPrefix, depth, ct); }
                 finally { gate.Release(); }
             });
 
-            var list = (await Task.WhenAll(tasks)).ToList();
-            list.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
-            return list;
+            var level = (await Task.WhenAll(tasks)).ToList();
+            level.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
+
+            // The gate is not held while recursing, so a deep tree cannot starve itself.
+            var children = await Task.WhenAll(level.Select(sub =>
+                depth < MaxDepth && IsPopulated(sub.State)
+                    ? ListChildrenAsync(sub, gate, ct)
+                    : Task.FromResult(new List<SubmoduleInfo>())));
+
+            var flat = new List<SubmoduleInfo>(level.Count);
+            for (var i = 0; i < level.Count; i++)
+            {
+                flat.Add(level[i]);
+                flat.AddRange(children[i]);
+            }
+            return flat;
         }
 
-        public async Task<SubmoduleInfo?> GetAsync(string root, string path, CancellationToken ct = default)
+        private async Task<List<SubmoduleInfo>> ListChildrenAsync(SubmoduleInfo parent, SemaphoreSlim gate, CancellationToken ct)
+        {
+            var folder = Path.Combine(parent.RepoRoot, parent.Path.Replace('/', Path.DirectorySeparatorChar));
+            try
+            {
+                return await ListRepoAsync(folder, parent.DisplayPath + "/", parent.Depth + 1, gate, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A folder that is not a readable repository simply has no children to show.
+                return new List<SubmoduleInfo>();
+            }
+        }
+
+        private static bool IsPopulated(SubmoduleState state) =>
+            state is SubmoduleState.Ready or SubmoduleState.DifferentCommit or SubmoduleState.ManuallyCloned;
+
+        public async Task<SubmoduleInfo?> GetAsync(string root, string path, CancellationToken ct = default,
+            string displayPrefix = "", int depth = 0)
         {
             var pinned = await GetPinnedAsync(root, ct);
             var entry = pinned.FirstOrDefault(p => string.Equals(p.Path, path, StringComparison.Ordinal));
             if (entry.Path == null) return null;
 
             var byPath = await GetGitmodulesAsync(root, ct);
-            return await BuildAsync(root, entry.Path, entry.Sha, byPath, ct);
+            return await BuildAsync(root, entry.Path, entry.Sha, byPath, displayPrefix, depth, ct);
         }
 
         public async Task<GitResult> InitAndUpdateAsync(string root, SubmoduleInfo sub, bool latestFromBranch,
@@ -216,8 +257,10 @@ namespace GitCheckoutManager.Services
 
         private async Task<SubmoduleInfo> BuildAsync(
             string root, string path, string pinnedSha,
-            Dictionary<string, (string Name, ModuleConfig Config)> byPath, CancellationToken ct)
+            Dictionary<string, (string Name, ModuleConfig Config)> byPath,
+            string displayPrefix, int depth, CancellationToken ct)
         {
+            var displayPath = displayPrefix + path;
             byPath.TryGetValue(path, out var entry);
             var name = entry.Config == null ? null : entry.Name;
             var url = entry.Config?.Url;
@@ -225,7 +268,8 @@ namespace GitCheckoutManager.Services
 
             var folder = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
             if (!Directory.Exists(folder))
-                return new SubmoduleInfo(path, name, url, branch, pinnedSha, null, SubmoduleState.OutsideCheckout);
+                return new SubmoduleInfo(path, name, url, branch, pinnedSha, null, SubmoduleState.OutsideCheckout,
+                    RepoRoot: root, DisplayPath: displayPath, Depth: depth);
 
             var overridden = false;
             string? effectiveUrl = null;
@@ -249,7 +293,7 @@ namespace GitCheckoutManager.Services
             }
 
             SubmoduleInfo Make(SubmoduleState state, string? current = null) =>
-                new(path, name, url, branch, pinnedSha, current, state, overridden, effectiveUrl);
+                new(path, name, url, branch, pinnedSha, current, state, overridden, effectiveUrl, root, displayPath, depth);
 
             // A populated submodule has a ".git" file (gitdir pointer) or folder of its own.
             var dotGit = Path.Combine(folder, ".git");

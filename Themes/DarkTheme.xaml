@@ -221,6 +221,8 @@
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource DisabledControlBackgroundBrush}"/>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource DisabledControlBorderBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                            <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
