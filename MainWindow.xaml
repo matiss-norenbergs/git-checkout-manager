@@ -496,6 +496,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*" MinWidth="80"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="10"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -504,9 +505,25 @@
                                        FontWeight="SemiBold" Margin="0,0,6,0"/>
                             <TextBox Grid.Column="1"
                                      Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalAlignment="Center" Padding="5,4"/>
+                                     VerticalAlignment="Center" Padding="5,4"
+                                     ToolTip="Type to filter. Include '/' to match the full path."/>
+                            <TextBlock Grid.Column="2" Text="{Binding SearchResultText}"
+                                       Margin="8,0,0,0" MaxWidth="240" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding SearchResultText}"
+                                       Foreground="{DynamicResource MutedTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SearchResultText}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
-                            <StackPanel Grid.Column="3" Orientation="Horizontal"
+                            <StackPanel Grid.Column="4" Orientation="Horizontal"
                                         IsEnabled="{Binding IsTreeSelectionEnabled}">
                                 <Grid Margin="0,0,6,0" VerticalAlignment="Center">
                                     <ComboBox ItemsSource="{Binding AvailablePresets}"
@@ -597,7 +614,10 @@
                                     </CheckBox>
 
                                     <!-- Node name: bold for folders, muted for excluded files -->
-                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}">
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="{Binding NameBefore, Mode=OneWay}"/><Run Text="{Binding NameMatch, Mode=OneWay}"
+                                              FontWeight="SemiBold"
+                                              Foreground="{DynamicResource AccentBrush}"/><Run Text="{Binding NameAfter, Mode=OneWay}"/>
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>

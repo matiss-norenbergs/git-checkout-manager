@@ -76,6 +76,7 @@ namespace GitSparseManager.ViewModels
         // ── Tree ──────────────────────────────────────────────────────────────
         [ObservableProperty] private ObservableCollection<TreeNodeViewModel> _treeNodes = new();
         [ObservableProperty] private string _searchFilter = string.Empty;
+        [ObservableProperty] private string _searchResultText = string.Empty;
 
         // ── Output ────────────────────────────────────────────────────────────
         [ObservableProperty] private string _selectedPathsText = string.Empty;
@@ -602,7 +603,7 @@ namespace GitSparseManager.ViewModels
             RegenerateScript();
         }
 
-        partial void OnSearchFilterChanged(string value) => ApplyFilter(value);
+        partial void OnSearchFilterChanged(string value) => DebounceApplyFilter(value);
 
         partial void OnBranchFilterTextChanged(string value)
         {
@@ -741,6 +742,9 @@ namespace GitSparseManager.ViewModels
             var roots = await Task.Run(() => BuildTree(flatNodes));
             _allRootNodes = roots;
             TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
+            // The snapshot belongs to the old nodes; start fresh and re-apply any active search
+            _expansionSnapshot = null;
+            ApplyFilter(SearchFilter);
             ScheduleRegenerate();
         }
 
@@ -2063,10 +2067,47 @@ namespace GitSparseManager.ViewModels
             return paths;
         }
 
+        private const int SearchDebounceMs = 250;
+        private CancellationTokenSource? _searchCts;
+        private Dictionary<TreeNodeViewModel, bool>? _expansionSnapshot;
+
+        private async void DebounceApplyFilter(string filter)
+        {
+            _searchCts?.Cancel();
+            var cts = _searchCts = new CancellationTokenSource();
+            try
+            {
+                await Task.Delay(SearchDebounceMs, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            ApplyFilter(filter);
+        }
+
         private void ApplyFilter(string filter)
         {
-            foreach (var node in _allRootNodes)
-                node.ApplyFilter(filter);
+            if (string.IsNullOrEmpty(filter))
+            {
+                TreeSearch.Clear(_allRootNodes);
+                if (_expansionSnapshot != null)
+                {
+                    TreeSearch.RestoreExpansion(_expansionSnapshot);
+                    _expansionSnapshot = null;
+                }
+                SearchResultText = string.Empty;
+                return;
+            }
+
+            // Search is starting: remember how the tree was expanded so clearing can put it back
+            _expansionSnapshot ??= TreeSearch.CaptureExpansion(_allRootNodes);
+
+            var result = TreeSearch.Apply(_allRootNodes, filter);
+            SearchResultText = result.MatchCount == 0 ? "No matches"
+                : !result.Expanded ? $"{result.MatchCount} matches — keep typing to narrow it down"
+                : result.MatchCount == 1 ? "1 match"
+                : $"{result.MatchCount} matches";
         }
 
         private void LoadPresetsForCurrentScan()
