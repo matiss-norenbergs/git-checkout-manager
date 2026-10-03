@@ -19,6 +19,14 @@
     <Page Include="App.xaml" />
   </ItemGroup>
 
+  <!-- The test project lives in a sub-folder; keep its sources out of the app's default globs. -->
+  <ItemGroup>
+    <Compile Remove="GitSparseManager.Tests\**" />
+    <EmbeddedResource Remove="GitSparseManager.Tests\**" />
+    <None Remove="GitSparseManager.Tests\**" />
+    <Page Remove="GitSparseManager.Tests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="Assets\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

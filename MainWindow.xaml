@@ -362,6 +362,10 @@
                             Style="{StaticResource ActionButton}"
                             Visibility="{Binding HasCleanupLeftovers, Converter={StaticResource BoolToVis}}"
                             ToolTip="Close programs using these folders, then retry"/>
+                    <Button Content="Disable sparse checkout"
+                            Command="{Binding DisableSparseCheckoutCommand}"
+                            Style="{StaticResource ActionButton}"
+                            ToolTip="Checks out all files of the repository (may download them)"/>
                     <Button Content="Apply Now"
                             Command="{Binding ApplyManageCommand}"
                             Style="{StaticResource AccentActionButton}"

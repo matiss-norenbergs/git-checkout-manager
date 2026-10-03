@@ -63,7 +63,7 @@ namespace GitSparseManager.ViewModels
 
         private void RefreshExample() =>
             FolderNameExample = "Example: " +
-                MainViewModel.BuildFolderName(FolderNamePattern, "tmp", null, "feature/login");
+                FolderNameBuilder.Build(FolderNamePattern, "tmp", null, "feature/login");
 
         [RelayCommand]
         private void ClearTreeCache()
