@@ -577,7 +577,6 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,2">
                                     <!-- Only folders are selectable: cone mode cannot take a file path -->
                                     <CheckBox IsChecked="{Binding IsChecked}"
-                                              IsEnabled="{Binding DataContext.IsTreeSelectionEnabled, RelativeSource={RelativeSource AncestorType=Window}}"
                                               IsThreeState="True"
                                               VerticalAlignment="Center"
                                               Margin="0,0,5,0">
@@ -587,6 +586,10 @@
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsFolder}" Value="False">
                                                         <Setter Property="Visibility" Value="Hidden"/>
+                                                    </DataTrigger>
+                                                    <!-- Full clone includes everything: hide the checkboxes (selection is kept) -->
+                                                    <DataTrigger Binding="{Binding DataContext.IsFullClone, RelativeSource={RelativeSource AncestorType=TreeView}}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -609,6 +612,7 @@
                                                         <MultiDataTrigger.Conditions>
                                                             <Condition Binding="{Binding IsFolder}" Value="False"/>
                                                             <Condition Binding="{Binding IsIncluded}" Value="False"/>
+                                                            <Condition Binding="{Binding DataContext.IsFullClone, RelativeSource={RelativeSource AncestorType=TreeView}}" Value="False"/>
                                                         </MultiDataTrigger.Conditions>
                                                         <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
                                                     </MultiDataTrigger>
