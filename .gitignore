@@ -22,3 +22,5 @@ desktop.ini
 
 # OS files
 .DS_Store
+
+_bin/
