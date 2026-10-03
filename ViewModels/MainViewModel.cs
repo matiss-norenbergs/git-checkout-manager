@@ -384,22 +384,6 @@ namespace GitSparseManager.ViewModels
 
         // ── Destination ───────────────────────────────────────────────────────
 
-        internal static string BuildFolderName(string pattern, string? repo, string? newBranch, string? baseBranch)
-        {
-            if (string.IsNullOrWhiteSpace(pattern)) pattern = AppSettings.DefaultFolderNamePattern;
-            var branch = string.IsNullOrWhiteSpace(newBranch) ? baseBranch : newBranch;
-
-            var name = pattern
-                .Replace("{repo}", repo ?? string.Empty)
-                .Replace("{branch}", branch ?? string.Empty)
-                .Replace("{base}", baseBranch ?? string.Empty);
-
-            foreach (var c in new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' })
-                name = name.Replace(c, '-');
-
-            return Regex.Replace(name, "-{2,}", "-").TrimEnd('.', ' ');
-        }
-
         private static bool IsValidFolderName(string name) =>
             !string.IsNullOrWhiteSpace(name) &&
             name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
@@ -421,7 +405,7 @@ namespace GitSparseManager.ViewModels
             {
                 var name = SelectedRepository == null
                     ? string.Empty
-                    : BuildFolderName(_appSettings.FolderNamePattern, SelectedRepository.Name,
+                    : FolderNameBuilder.Build(_appSettings.FolderNamePattern, SelectedRepository.Name,
                         NewBranchName.Trim(), SelectedBranch?.Name);
 
                 if (name != FolderName)
@@ -1227,13 +1211,11 @@ namespace GitSparseManager.ViewModels
         {
             var selected = GetSelectedPaths();
 
-            _addedPaths = selected.Where(p => !IsCoveredBy(_baselinePaths, p)).ToList();
-            _removedPaths = _baselinePaths.Where(p => !IsCoveredBy(selected, p)).ToList();
-
-            // Safety net: a kept folder must never be a removal target.
-            var expanded = ExpandRemovalTargets(_removedPaths, selected, _allRootNodes);
-            _droppedTargets = expanded.Where(t => ContainsOrEquals(t, selected)).ToList();
-            _removalTargets = expanded.Where(t => !ContainsOrEquals(t, selected)).ToList();
+            var plan = RemovalPlanner.Plan(_baselinePaths, selected, _allRootNodes);
+            _addedPaths = plan.Added;
+            _removedPaths = plan.Removed;
+            _droppedTargets = plan.Dropped;
+            _removalTargets = plan.Targets;
 
             var lines = _addedPaths.Select(p => "+ " + p)
                 .Concat(_removalTargets.Select(p => "\u2212 " + p))
@@ -1262,71 +1244,6 @@ namespace GitSparseManager.ViewModels
 
             IsApplyEnabled = !info.IsSparse || _addedPaths.Count > 0 || _removedPaths.Count > 0;
         }
-
-        /// <summary>
-        /// Narrows removed folders to what actually leaves the worktree. A removed folder with no selected
-        /// path under it is a target itself; otherwise only its sibling folders off the path to the selection
-        /// are (its direct files stay, as cone mode keeps them). Selected paths are never targets.
-        /// </summary>
-        internal static List<string> ExpandRemovalTargets(
-            IEnumerable<string> removedPaths, IReadOnlyList<string> selectedPaths,
-            IReadOnlyList<TreeNodeViewModel> tree)
-        {
-            var targets = new List<string>();
-
-            foreach (var removed in removedPaths)
-            {
-                if (!HasSelectedUnder(removed, selectedPaths))
-                {
-                    targets.Add(removed);
-                    continue;
-                }
-
-                var node = FindNode(tree, removed);
-                if (node != null) CollectTargets(node, selectedPaths, targets);
-            }
-
-            return targets;
-        }
-
-        private static void CollectTargets(TreeNodeViewModel node, IReadOnlyList<string> selected, List<string> targets)
-        {
-            foreach (var child in node.Children.Where(c => c.IsFolder))
-            {
-                if (selected.Any(s => string.Equals(s, child.FullPath, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-
-                if (HasSelectedUnder(child.FullPath, selected))
-                    CollectTargets(child, selected, targets);
-                else
-                    targets.Add(child.FullPath);
-            }
-        }
-
-        private static bool HasSelectedUnder(string folder, IEnumerable<string> selected) =>
-            selected.Any(s => s.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
-
-        /// <summary>True when <paramref name="target"/> equals a selected path or contains one.</summary>
-        private static bool ContainsOrEquals(string target, IEnumerable<string> selected) =>
-            selected.Any(s => string.Equals(s, target, StringComparison.OrdinalIgnoreCase) ||
-                              s.StartsWith(target + "/", StringComparison.OrdinalIgnoreCase));
-
-        private static TreeNodeViewModel? FindNode(IEnumerable<TreeNodeViewModel> nodes, string path)
-        {
-            foreach (var node in nodes)
-            {
-                if (string.Equals(node.FullPath, path, StringComparison.OrdinalIgnoreCase)) return node;
-                if (node.IsFolder && path.StartsWith(node.FullPath + "/", StringComparison.OrdinalIgnoreCase))
-                    return FindNode(node.Children, path);
-            }
-
-            return null;
-        }
-
-        /// <summary>True when <paramref name="path"/> equals an entry of <paramref name="set"/> or sits under one.</summary>
-        private static bool IsCoveredBy(IEnumerable<string> set, string path) =>
-            set.Any(s => string.Equals(s, path, StringComparison.OrdinalIgnoreCase) ||
-                         path.StartsWith(s + "/", StringComparison.OrdinalIgnoreCase));
 
         // ── Manage: recent checkouts ──────────────────────────────────────────
 

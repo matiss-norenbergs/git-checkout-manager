@@ -284,6 +284,18 @@ The `.sh` version does the same with Bash syntax.
 
 ---
 
+## Running tests
+
+The tests live in `GitSparseManager.Tests` (xUnit). The integration tests use a real `git` from `PATH` and temporary folders, and skip themselves when git isn't found.
+
+```
+dotnet test
+```
+
+They also run in GitHub Actions on every pull request and push to `main`.
+
+---
+
 ## Where data is stored
 
 | What | Location |
