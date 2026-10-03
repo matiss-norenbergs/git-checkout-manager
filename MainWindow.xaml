@@ -78,6 +78,20 @@
 
     <DockPanel>
 
+        <!-- ═══ UPDATE BAR ═════════════════════════════════════════════════════ -->
+        <Border DockPanel.Dock="Top" Visibility="{Binding IsUpdateBarVisible, Converter={StaticResource BoolToVis}}"
+                Background="{DynamicResource AccentBrush}" Padding="12,6">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Later" Command="{Binding DismissUpdateCommand}"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="8,0,0,0"
+                        Foreground="{DynamicResource OnAccentBrush}" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Content="Restart" Command="{Binding RestartToUpdateCommand}"
+                        Padding="14,3" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding UpdateMessage}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource OnAccentBrush}"/>
+            </DockPanel>
+        </Border>
+
         <!-- ═══ MODE TABS ══════════════════════════════════════════════════════ -->
         <Border DockPanel.Dock="Top"
             Background="{DynamicResource TabStripBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"

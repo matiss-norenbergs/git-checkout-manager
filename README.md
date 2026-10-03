@@ -25,9 +25,12 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 ## Requirements
 
 - Windows 10 or later
-- .NET 8 Desktop Runtime
 - **Git for Windows**, available on `PATH` (Git 2.36 or newer recommended)
 - A GitLab or GitHub account with a Personal Access Token
+
+### Installing
+
+Download `GitSparseManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-sparse-manager/releases); the app updates itself.
 
 ---
 

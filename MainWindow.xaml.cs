@@ -27,9 +27,11 @@ namespace GitSparseManager
             var remoteTree      = new RemoteTreeService(gitService);
             var checkoutService = new CheckoutService(gitService);
             var submoduleService = new SubmoduleService(gitService);
+            var updateService   = new UpdateService();
 
-            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService);
+            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService, updateService);
             DataContext = _viewModel;
+            Loaded += async (_, _) => await _viewModel.CheckForUpdatesOnStartupAsync();
 
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;

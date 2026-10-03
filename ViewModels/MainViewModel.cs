@@ -25,6 +25,7 @@ namespace GitSparseManager.ViewModels
         private readonly IRemoteTreeService _remoteTreeService;
         private readonly ICheckoutService _checkoutService;
         private readonly ISubmoduleService _submoduleService;
+        private readonly IUpdateService _updateService;
 
         private IGitHostService _hostService;
         private AppSettings _appSettings;
@@ -159,7 +160,9 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private ThemeMode _selectedThemeMode = ThemeMode.System;
 
         // ── UI state ──────────────────────────────────────────────────────────
-        [ObservableProperty] private bool _isLoading = false;
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RestartToUpdateCommand))]
+        private bool _isLoading = false;
         [ObservableProperty] private bool _isConnected = false;
         [ObservableProperty] private string _statusMessage = "Enter your server URL and Personal Access Token, then click Connect.";
 
@@ -230,8 +233,10 @@ namespace GitSparseManager.ViewModels
             IGitService gitService,
             IRemoteTreeService remoteTreeService,
             ICheckoutService checkoutService,
-            ISubmoduleService submoduleService)
+            ISubmoduleService submoduleService,
+            IUpdateService updateService)
         {
+            _updateService = updateService;
             _hostServiceFactory = hostServiceFactory;
             _gitService = gitService;
             _remoteTreeService = remoteTreeService;
@@ -775,7 +780,71 @@ namespace GitSparseManager.ViewModels
         private void OpenSettings() =>
             _dialogService.ShowSettings(
                 new SettingsViewModel(SelectedThemeMode, _appSettings.FolderNamePattern, _remoteTreeService,
-                    mode => SelectedThemeMode = mode, ApplyFolderNamePattern));
+                    mode => SelectedThemeMode = mode, ApplyFolderNamePattern, CheckForUpdatesManualAsync));
+
+        // ── Auto-update ───────────────────────────────────────────────────────
+        [ObservableProperty] private bool _isUpdateBarVisible;
+        [ObservableProperty] private string _updateMessage = string.Empty;
+        private bool _updateCheckRunning;
+
+        /// <summary>Silent startup check: errors surface in the status bar at most once, never block.</summary>
+        public async Task CheckForUpdatesOnStartupAsync()
+        {
+            try
+            {
+                if (!_updateService.IsInstalled) return;
+                await RunUpdateCheckAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Update check failed: {ex.Message}";
+            }
+        }
+
+        private async Task<string> CheckForUpdatesManualAsync()
+        {
+            if (!_updateService.IsInstalled)
+                return "Updates are only available in the installed version.";
+
+            try
+            {
+                var version = await RunUpdateCheckAsync();
+                return version == null ? "You're up to date." : $"Version {version} is ready. Restart to update.";
+            }
+            catch (Exception ex)
+            {
+                return $"Update check failed: {ex.Message}";
+            }
+        }
+
+        private async Task<string?> RunUpdateCheckAsync()
+        {
+            if (_updateCheckRunning) return null;
+            _updateCheckRunning = true;
+            try
+            {
+                var version = await Task.Run(() => _updateService.CheckAndDownloadAsync());
+                if (version != null)
+                {
+                    UpdateMessage = $"Version {version} is ready — Restart to update";
+                    IsUpdateBarVisible = true;
+                }
+                return version;
+            }
+            finally
+            {
+                _updateCheckRunning = false;
+            }
+        }
+
+        // Restart is held back while an operation runs, so an update never interrupts one.
+        [RelayCommand(CanExecute = nameof(CanRestartToUpdate))]
+        private void RestartToUpdate() => _updateService.ApplyUpdatesAndRestart();
+
+        private bool CanRestartToUpdate() => !IsLoading;
+
+        [RelayCommand]
+        private void DismissUpdate() => IsUpdateBarVisible = false;
 
         [RelayCommand]
         private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);

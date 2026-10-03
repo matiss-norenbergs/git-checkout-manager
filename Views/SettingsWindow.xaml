@@ -74,6 +74,23 @@
             </StackPanel>
         </Border>
 
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="About" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Check for updates" Padding="14,5"
+                            Command="{Binding CheckForUpdatesCommand}"/>
+                </Grid>
+                <TextBlock Text="{Binding UpdateStatusText}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
         <Button Content="Close" Width="90" Padding="10,5"
                 HorizontalAlignment="Right" Margin="0,6,0,0"
                 IsDefault="True" IsCancel="True"/>
