@@ -74,6 +74,50 @@ public class CommandGeneratorTests
     }
 
     [Fact]
+    public void Full_bat_is_a_plain_clone_of_the_branch()
+    {
+        var bat = _gen.GenerateBatScript("https://x/r.git", "main", Array.Empty<string>(), "r", "topic", fullClone: true);
+
+        Assert.Contains("git clone --branch \"main\" \"https://x/r.git\" \"r\"", bat);
+        Assert.Contains("cd /d \"r\"", bat);
+        Assert.Contains("git checkout -b \"topic\"", bat);
+        Assert.DoesNotContain("sparse-checkout", bat);
+        Assert.DoesNotContain("--filter", bat);
+        Assert.DoesNotContain("--no-checkout", bat);
+        Assert.DoesNotContain("--recurse-submodules", bat);
+        Assert.Equal("chcp 65001 >nul", Lines(bat)[1]);
+    }
+
+    [Fact]
+    public void Full_scripts_include_submodule_loop_only_when_enabled()
+    {
+        var batOff = _gen.GenerateBatScript("https://x/r.git", "main", Array.Empty<string>(), "r", fullClone: true);
+        var batOn = _gen.GenerateBatScript("https://x/r.git", "main", Array.Empty<string>(), "r", initSubmodules: true, fullClone: true);
+        var shOff = _gen.GenerateShScript("https://x/r.git", "main", Array.Empty<string>(), "r", fullClone: true);
+        var shOn = _gen.GenerateShScript("https://x/r.git", "main", Array.Empty<string>(), "r", initSubmodules: true, fullClone: true);
+
+        Assert.DoesNotContain(".gitmodules", batOff);
+        Assert.DoesNotContain(".gitmodules", shOff);
+        Assert.Contains("if exist .gitmodules (", batOn);
+        Assert.Contains("WARNING:", batOn);
+        Assert.Contains("exit /b 2", batOn);
+        Assert.Contains("if [ -f .gitmodules ]", shOn);
+        Assert.Contains("exit 2", shOn);
+    }
+
+    [Fact]
+    public void Full_sh_has_no_carriage_returns_and_no_sparse_commands()
+    {
+        var sh = _gen.GenerateShScript("https://x/r.git", "it's", Array.Empty<string>(), "r", "topic", initSubmodules: true, fullClone: true);
+
+        Assert.DoesNotContain('\r', sh);
+        Assert.Contains("git clone --branch 'it'\\''s' 'https://x/r.git' 'r' || fail", sh);
+        Assert.Contains("git checkout -b 'topic' || fail", sh);
+        Assert.DoesNotContain("sparse-checkout", sh);
+        Assert.DoesNotContain("--filter", sh);
+    }
+
+    [Fact]
     public void Manage_scripts_follow_same_rules()
     {
         var bat = _gen.GenerateManageBatScript(@"C:\repo%1", new[] { "apps" }, removedPaths: new[] { "docs" });

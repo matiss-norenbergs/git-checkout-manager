@@ -175,7 +175,37 @@ namespace GitSparseManager.ViewModels
         [NotifyPropertyChangedFor(nameof(IsCloneMode))]
         [NotifyPropertyChangedFor(nameof(IsManageMode))]
         [NotifyPropertyChangedFor(nameof(IsOperationEnabled))]
+        [NotifyPropertyChangedFor(nameof(IsFullClone))]
+        [NotifyPropertyChangedFor(nameof(IsTreeSelectionEnabled))]
         private AppMode _activeMode = AppMode.Clone;
+
+        // ── Clone mode (sparse vs full) ───────────────────────────────────────
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsFullClone))]
+        [NotifyPropertyChangedFor(nameof(IsTreeSelectionEnabled))]
+        [NotifyPropertyChangedFor(nameof(IsSparseCloneSelected))]
+        [NotifyPropertyChangedFor(nameof(IsFullCloneSelected))]
+        private CloneMode _selectedCloneMode = CloneMode.Sparse;
+
+        /// <summary>RadioButton binding for the sparse option.</summary>
+        public bool IsSparseCloneSelected
+        {
+            get => SelectedCloneMode == CloneMode.Sparse;
+            set { if (value) SelectedCloneMode = CloneMode.Sparse; }
+        }
+
+        /// <summary>RadioButton binding for the full-clone option.</summary>
+        public bool IsFullCloneSelected
+        {
+            get => SelectedCloneMode == CloneMode.Full;
+            set { if (value) SelectedCloneMode = CloneMode.Full; }
+        }
+
+        /// <summary>True only on the Clone tab with Full clone chosen; Manage always works on a selection.</summary>
+        public bool IsFullClone => IsCloneMode && SelectedCloneMode == CloneMode.Full;
+
+        /// <summary>Tree checkboxes and presets are usable unless a full clone includes everything anyway.</summary>
+        public bool IsTreeSelectionEnabled => !IsFullClone;
 
         public bool IsCloneMode
         {
@@ -261,6 +291,7 @@ namespace GitSparseManager.ViewModels
             _appSettings = settingsService.LoadSettings();
             _scriptPanelExpanded = _appSettings.ScriptPanelExpanded;
             _cloneParentFolder = _appSettings.CloneParentFolder ?? string.Empty;
+            _selectedCloneMode = _appSettings.CloneMode;
             InitSubmodules = _appSettings.InitSubmodules;
             KeepWindowOpen = _appSettings.KeepWindowOpen;
             SelectedThemeMode = _appSettings.ThemeMode;
@@ -346,6 +377,13 @@ namespace GitSparseManager.ViewModels
             _appSettings.InitSubmodules = value;
             _settingsService.SaveSettings(_appSettings);
             ScheduleRegenerate();
+        }
+
+        partial void OnSelectedCloneModeChanged(CloneMode value)
+        {
+            _appSettings.CloneMode = value;
+            _settingsService.SaveSettings(_appSettings);
+            RegenerateScript();
         }
 
         partial void OnKeepWindowOpenChanged(bool value)
@@ -868,13 +906,14 @@ namespace GitSparseManager.ViewModels
 
         private void RegenerateCloneScript()
         {
-            var paths = DropFilePaths(GetSelectedPaths(), out _);
-            SelectedPathsText = string.Join(Environment.NewLine, paths);
+            var full = IsFullClone;
+            var paths = full ? new List<string>() : DropFilePaths(GetSelectedPaths(), out _);
+            SelectedPathsText = full ? "All folders" : string.Join(Environment.NewLine, paths);
 
             string? problem = null;
             if (SelectedRepository == null) problem = "Select a repository";
             else if (string.IsNullOrWhiteSpace(SelectedBranch?.Name)) problem = "Select a branch";
-            else if (paths.Count == 0) problem = "Select at least one folder";
+            else if (!full && paths.Count == 0) problem = "Select at least one folder";
 
             if (problem != null)
             {
@@ -889,7 +928,8 @@ namespace GitSparseManager.ViewModels
                 FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
-                KeepWindowOpen), valid: true);
+                KeepWindowOpen,
+                fullClone: full), valid: true);
         }
 
         private void RegenerateManageScript(List<string> paths)
@@ -933,8 +973,9 @@ namespace GitSparseManager.ViewModels
         [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveSh()
         {
-            var paths = DropFilePaths(GetSelectedPaths(), out _);
-            if (paths.Count == 0)
+            var full = IsFullClone;
+            var paths = full ? new List<string>() : DropFilePaths(GetSelectedPaths(), out _);
+            if (!full && paths.Count == 0)
             {
                 StatusMessage = "No paths selected.";
                 return;
@@ -953,7 +994,8 @@ namespace GitSparseManager.ViewModels
                 FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
-                KeepWindowOpen);
+                KeepWindowOpen,
+                fullClone: full);
 
             var savePath = _dialogService.ShowSaveFileDialog(
                 "Shell scripts (*.sh)|*.sh|All files (*.*)|*.*", ".sh", "sparse-checkout");
@@ -971,8 +1013,9 @@ namespace GitSparseManager.ViewModels
         [RelayCommand(CanExecute = nameof(CanExecuteScript))]
         private async Task ExecuteScriptAsync()
         {
-            var paths = DropFilePaths(GetSelectedPaths(), out _);
-            if (paths.Count == 0)
+            var full = IsFullClone;
+            var paths = full ? new List<string>() : DropFilePaths(GetSelectedPaths(), out _);
+            if (!full && paths.Count == 0)
             {
                 StatusMessage = "No paths selected. Check items in the tree first.";
                 return;
@@ -994,9 +1037,10 @@ namespace GitSparseManager.ViewModels
                 targetPath,
                 newBranch,
                 InitSubmodules,
-                KeepWindowOpen);
+                KeepWindowOpen,
+                fullClone: full);
 
-            var message = $"Clone {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
+            var message = $"{(full ? "Full clone of" : "Clone")} {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
             if (newBranch != null) message += $"\nand create branch {newBranch}";
 
             if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))

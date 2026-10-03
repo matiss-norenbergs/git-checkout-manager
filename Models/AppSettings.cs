@@ -32,6 +32,9 @@ namespace GitSparseManager.Models
         /// <summary>Submodules window: list only submodules that need attention.</summary>
         public bool SubmodulesShowOnlyProblems { get; set; } = false;
 
+        /// <summary>Clone tab: sparse checkout of selected folders, or a full clone.</summary>
+        public CloneMode CloneMode { get; set; } = CloneMode.Sparse;
+
         public const string DefaultFolderNamePattern = "{repo}_{branch}";
 
         /// <summary>Folder where Clone checkouts are created; remembered between runs.</summary>

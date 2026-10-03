@@ -8,7 +8,8 @@ namespace GitSparseManager.Services
 
         public string GenerateBatScript(
             string repoUrl, string branch, IEnumerable<string> sparsePaths, string targetFolder,
-            string? newBranch = null, bool initSubmodules = false, bool keepWindowOpen = false, string? workingDirectory = null)
+            string? newBranch = null, bool initSubmodules = false, bool keepWindowOpen = false, string? workingDirectory = null,
+            bool fullClone = false)
         {
             var paths = sparsePaths.ToList();
             var sb = new StringBuilder();
@@ -24,9 +25,12 @@ namespace GitSparseManager.Services
                 sb.AppendLine();
             }
 
+            var cloneFlags = fullClone
+                ? $"git clone --branch \"{BatEscape(branch)}\""
+                : "git clone --filter=blob:none --no-checkout";
             var cloneArgs = string.IsNullOrWhiteSpace(targetFolder)
-                ? $"git clone --filter=blob:none --no-checkout \"{BatEscape(repoUrl)}\""
-                : $"git clone --filter=blob:none --no-checkout \"{BatEscape(repoUrl)}\" \"{BatEscape(targetFolder)}\"";
+                ? $"{cloneFlags} \"{BatEscape(repoUrl)}\""
+                : $"{cloneFlags} \"{BatEscape(repoUrl)}\" \"{BatEscape(targetFolder)}\"";
             sb.AppendLine(cloneArgs);
             sb.AppendLine(BatCheck);
             sb.AppendLine();
@@ -36,21 +40,24 @@ namespace GitSparseManager.Services
                 : targetFolder;
             sb.AppendLine($"cd /d \"{BatEscape(cdTarget)}\"");
             sb.AppendLine(BatCheck);
-            sb.AppendLine();
 
-            sb.AppendLine("git sparse-checkout init --cone");
-            sb.AppendLine(BatCheck);
-            sb.AppendLine();
-
-            if (paths.Count > 0)
+            if (!fullClone)
             {
-                AppendBatSparseSet(sb, paths);
+                sb.AppendLine();
+                sb.AppendLine("git sparse-checkout init --cone");
+                sb.AppendLine(BatCheck);
+                sb.AppendLine();
+
+                if (paths.Count > 0)
+                {
+                    AppendBatSparseSet(sb, paths);
+                    sb.AppendLine(BatCheck);
+                }
+
+                sb.AppendLine();
+                sb.AppendLine($"git checkout \"{BatEscape(branch)}\"");
                 sb.AppendLine(BatCheck);
             }
-
-            sb.AppendLine();
-            sb.AppendLine($"git checkout \"{BatEscape(branch)}\"");
-            sb.AppendLine(BatCheck);
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {
@@ -86,7 +93,8 @@ namespace GitSparseManager.Services
 
         public string GenerateShScript(
             string repoUrl, string branch, IEnumerable<string> sparsePaths, string targetFolder,
-            string? newBranch = null, bool initSubmodules = false, bool keepWindowOpen = false, string? workingDirectory = null)
+            string? newBranch = null, bool initSubmodules = false, bool keepWindowOpen = false, string? workingDirectory = null,
+            bool fullClone = false)
         {
             var paths = sparsePaths.ToList();
             var sb = new StringBuilder();
@@ -99,9 +107,12 @@ namespace GitSparseManager.Services
                 sb.AppendLine();
             }
 
+            var cloneFlags = fullClone
+                ? $"git clone --branch {ShQuote(branch)}"
+                : "git clone --filter=blob:none --no-checkout";
             var cloneArgs = string.IsNullOrWhiteSpace(targetFolder)
-                ? $"git clone --filter=blob:none --no-checkout {ShQuote(repoUrl)}"
-                : $"git clone --filter=blob:none --no-checkout {ShQuote(repoUrl)} {ShQuote(targetFolder)}";
+                ? $"{cloneFlags} {ShQuote(repoUrl)}"
+                : $"{cloneFlags} {ShQuote(repoUrl)} {ShQuote(targetFolder)}";
             sb.AppendLine($"{cloneArgs} || fail");
             sb.AppendLine();
 
@@ -109,16 +120,19 @@ namespace GitSparseManager.Services
                 ? RepoFolderName(repoUrl)
                 : targetFolder;
             sb.AppendLine($"cd {ShQuote(cdTarget)} || fail");
-            sb.AppendLine();
 
-            sb.AppendLine("git sparse-checkout init --cone || fail");
-            sb.AppendLine();
+            if (!fullClone)
+            {
+                sb.AppendLine();
+                sb.AppendLine("git sparse-checkout init --cone || fail");
+                sb.AppendLine();
 
-            if (paths.Count > 0)
-                AppendShSparseSet(sb, paths);
+                if (paths.Count > 0)
+                    AppendShSparseSet(sb, paths);
 
-            sb.AppendLine();
-            sb.AppendLine($"git checkout {ShQuote(branch)} || fail");
+                sb.AppendLine();
+                sb.AppendLine($"git checkout {ShQuote(branch)} || fail");
+            }
 
             if (!string.IsNullOrWhiteSpace(newBranch))
             {

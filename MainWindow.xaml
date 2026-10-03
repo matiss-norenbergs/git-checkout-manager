@@ -454,6 +454,15 @@
 
                 <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="4" Orientation="Vertical"
                             VerticalAlignment="Top">
+                    <RadioButton GroupName="CloneMode" IsChecked="{Binding IsSparseCloneSelected, Mode=TwoWay}"
+                                 ToolTip="Sparse checkout of the folders ticked in the tree">
+                        <TextBlock Text="Sparse – selected folders" FontSize="12"/>
+                    </RadioButton>
+                    <RadioButton GroupName="CloneMode" IsChecked="{Binding IsFullCloneSelected, Mode=TwoWay}"
+                                 Margin="0,4,0,8"
+                                 ToolTip="Plain git clone of the whole repository; the tree selection is ignored">
+                        <TextBlock Text="Full clone – everything" FontSize="12"/>
+                    </RadioButton>
                     <CheckBox IsChecked="{Binding InitSubmodules}"
                               ToolTip="Appends 'git submodule update --init --remote --recursive' to the script. Note: --remote updates each submodule to the latest commit on its upstream tracking branch, not the pinned superproject commit.">
                         <TextBlock Text="Initialize submodules" FontSize="12"/>
@@ -497,7 +506,8 @@
                                      Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalAlignment="Center" Padding="5,4"/>
 
-                            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                            <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                        IsEnabled="{Binding IsTreeSelectionEnabled}">
                                 <Grid Margin="0,0,6,0" VerticalAlignment="Center">
                                     <ComboBox ItemsSource="{Binding AvailablePresets}"
                                               SelectedItem="{Binding SelectedPreset}"
@@ -550,6 +560,11 @@
                         </Grid>
                     </Border>
 
+                    <TextBlock DockPanel.Dock="Top" Text="Full clone: every folder is included."
+                               FontSize="12" Margin="8,4"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Visibility="{Binding IsFullClone, Converter={StaticResource BoolToVis}}"/>
+
                     <TreeView ItemsSource="{Binding TreeNodes}"
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
@@ -562,6 +577,7 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,2">
                                     <!-- Only folders are selectable: cone mode cannot take a file path -->
                                     <CheckBox IsChecked="{Binding IsChecked}"
+                                              IsEnabled="{Binding DataContext.IsTreeSelectionEnabled, RelativeSource={RelativeSource AncestorType=Window}}"
                                               IsThreeState="True"
                                               VerticalAlignment="Center"
                                               Margin="0,0,5,0">
