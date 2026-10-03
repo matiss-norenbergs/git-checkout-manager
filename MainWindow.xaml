@@ -480,9 +480,9 @@
         <Grid>
             <Grid IsEnabled="{Binding IsOperationEnabled}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="320"/>
+                    <ColumnDefinition x:Name="TreeColumn" Width="2*" MinWidth="320"/>
                     <ColumnDefinition Width="5"/>
-                    <ColumnDefinition Width="380" MinWidth="260"/>
+                    <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="300"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- ── TREE PANEL ───────────────────────────────────────────── -->
@@ -633,6 +633,8 @@
                 </DockPanel>
 
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                              ResizeBehavior="PreviousAndNext"
+                              DragCompleted="MainSplitter_DragCompleted"
                               Background="{DynamicResource SplitterBrush}"/>
 
                 <!-- ── RIGHT PANEL ──────────────────────────────────────────── -->

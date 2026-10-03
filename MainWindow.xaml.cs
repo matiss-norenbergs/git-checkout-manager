@@ -31,6 +31,7 @@ namespace GitSparseManager
 
             _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService, updateService);
             DataContext = _viewModel;
+            ApplySplitRatio(_viewModel.MainSplitRatio);
             Loaded += async (_, _) => await _viewModel.CheckForUpdatesOnStartupAsync();
 
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
@@ -70,6 +71,29 @@ namespace GitSparseManager
             menu.PlacementTarget = PresetMenuButton;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
+        }
+
+        private const double MinSplitRatio = 0.4;
+        private const double MaxSplitRatio = 0.8;
+
+        private static double ClampRatio(double ratio) =>
+            double.IsNaN(ratio) ? AppSettings.DefaultMainSplitRatio : Math.Clamp(ratio, MinSplitRatio, MaxSplitRatio);
+
+        private void ApplySplitRatio(double ratio)
+        {
+            ratio = ClampRatio(ratio);
+            TreeColumn.Width = new GridLength(ratio, GridUnitType.Star);
+            RightColumn.Width = new GridLength(1 - ratio, GridUnitType.Star);
+        }
+
+        private void MainSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            var total = TreeColumn.ActualWidth + RightColumn.ActualWidth;
+            if (total <= 0) return;
+
+            var ratio = ClampRatio(TreeColumn.ActualWidth / total);
+            ApplySplitRatio(ratio);
+            _viewModel.SaveMainSplitRatio(ratio);
         }
 
         /// <summary>Sizes the right panel's script row: compact when collapsed, resizable when expanded.</summary>

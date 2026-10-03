@@ -23,6 +23,11 @@ namespace GitSparseManager.Models
         /// <summary>Whether the Script expander in the main window was left open.</summary>
         public bool ScriptPanelExpanded { get; set; } = false;
 
+        public const double DefaultMainSplitRatio = 2.0 / 3.0;
+
+        /// <summary>Main window: tree width as a fraction of tree + right panel (0.4–0.8).</summary>
+        public double MainSplitRatio { get; set; } = DefaultMainSplitRatio;
+
         /// <summary>Submodules window: update to the branch tip (--remote) instead of the pinned commit.</summary>
         public bool SubmoduleLatestFromBranch { get; set; } = false;
 

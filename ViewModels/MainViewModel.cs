@@ -393,6 +393,14 @@ namespace GitSparseManager.ViewModels
             ScheduleRegenerate();
         }
 
+        public double MainSplitRatio => _appSettings.MainSplitRatio;
+
+        public void SaveMainSplitRatio(double ratio)
+        {
+            _appSettings.MainSplitRatio = ratio;
+            _settingsService.SaveSettings(_appSettings);
+        }
+
         partial void OnScriptPanelExpandedChanged(bool value)
         {
             _appSettings.ScriptPanelExpanded = value;
