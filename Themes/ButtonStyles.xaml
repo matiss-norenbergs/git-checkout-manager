@@ -231,14 +231,14 @@
                                         </DataTrigger>
                                         <MultiDataTrigger>
                                             <MultiDataTrigger.Conditions>
-                                                <Condition Binding="{Binding IsChecked, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType=Expander}}" Value="True"/>
                                                 <Condition Binding="{Binding ExpandDirection, RelativeSource={RelativeSource AncestorType=Expander}}" Value="Down"/>
                                             </MultiDataTrigger.Conditions>
                                             <Setter TargetName="Chevron" Property="Text" Value="&#x25B2;"/>
                                         </MultiDataTrigger>
                                         <MultiDataTrigger>
                                             <MultiDataTrigger.Conditions>
-                                                <Condition Binding="{Binding IsChecked, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                                <Condition Binding="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType=Expander}}" Value="True"/>
                                                 <Condition Binding="{Binding ExpandDirection, RelativeSource={RelativeSource AncestorType=Expander}}" Value="Up"/>
                                             </MultiDataTrigger.Conditions>
                                             <Setter TargetName="Chevron" Property="Text" Value="&#x25BC;"/>
