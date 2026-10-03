@@ -39,6 +39,9 @@ namespace GitSparseManager.ViewModels
         private List<string> _baselinePaths = new();
         private List<string> _addedPaths = new();
         private List<string> _removedPaths = new();
+        // _removedPaths narrowed to the folders that really leave the worktree (see ExpandRemovalTargets).
+        private List<string> _removalTargets = new();
+        private List<string> _droppedTargets = new();
         private string _checkoutSummarySuffix = string.Empty;
 
         // Path of the checkout being opened or already open; guards against re-opening on selection echoes.
@@ -141,6 +144,7 @@ namespace GitSparseManager.ViewModels
         // ── Manage checkout ───────────────────────────────────────────────────
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
+        [NotifyCanExecuteChangedFor(nameof(DisableSparseCheckoutCommand))]
         private CheckoutInfo? _checkoutInfo;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
@@ -912,7 +916,7 @@ namespace GitSparseManager.ViewModels
             else if (!Directory.Exists(Path.Combine(root, ".git")))
                 SetScript("rem The selected path is not a Git repository (no .git folder found)", valid: false);
             else
-                SetScript(_commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removedPaths),
+                SetScript(_commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removalTargets),
                     valid: true);
         }
 
@@ -1226,8 +1230,13 @@ namespace GitSparseManager.ViewModels
             _addedPaths = selected.Where(p => !IsCoveredBy(_baselinePaths, p)).ToList();
             _removedPaths = _baselinePaths.Where(p => !IsCoveredBy(selected, p)).ToList();
 
+            // Safety net: a kept folder must never be a removal target.
+            var expanded = ExpandRemovalTargets(_removedPaths, selected, _allRootNodes);
+            _droppedTargets = expanded.Where(t => ContainsOrEquals(t, selected)).ToList();
+            _removalTargets = expanded.Where(t => !ContainsOrEquals(t, selected)).ToList();
+
             var lines = _addedPaths.Select(p => "+ " + p)
-                .Concat(_removedPaths.Select(p => "\u2212 " + p))
+                .Concat(_removalTargets.Select(p => "\u2212 " + p))
                 .ToList();
 
             PendingChangesText = lines.Count == 0 ? "No changes" : string.Join(Environment.NewLine, lines);
@@ -1252,6 +1261,66 @@ namespace GitSparseManager.ViewModels
             }
 
             IsApplyEnabled = !info.IsSparse || _addedPaths.Count > 0 || _removedPaths.Count > 0;
+        }
+
+        /// <summary>
+        /// Narrows removed folders to what actually leaves the worktree. A removed folder with no selected
+        /// path under it is a target itself; otherwise only its sibling folders off the path to the selection
+        /// are (its direct files stay, as cone mode keeps them). Selected paths are never targets.
+        /// </summary>
+        internal static List<string> ExpandRemovalTargets(
+            IEnumerable<string> removedPaths, IReadOnlyList<string> selectedPaths,
+            IReadOnlyList<TreeNodeViewModel> tree)
+        {
+            var targets = new List<string>();
+
+            foreach (var removed in removedPaths)
+            {
+                if (!HasSelectedUnder(removed, selectedPaths))
+                {
+                    targets.Add(removed);
+                    continue;
+                }
+
+                var node = FindNode(tree, removed);
+                if (node != null) CollectTargets(node, selectedPaths, targets);
+            }
+
+            return targets;
+        }
+
+        private static void CollectTargets(TreeNodeViewModel node, IReadOnlyList<string> selected, List<string> targets)
+        {
+            foreach (var child in node.Children.Where(c => c.IsFolder))
+            {
+                if (selected.Any(s => string.Equals(s, child.FullPath, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                if (HasSelectedUnder(child.FullPath, selected))
+                    CollectTargets(child, selected, targets);
+                else
+                    targets.Add(child.FullPath);
+            }
+        }
+
+        private static bool HasSelectedUnder(string folder, IEnumerable<string> selected) =>
+            selected.Any(s => s.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>True when <paramref name="target"/> equals a selected path or contains one.</summary>
+        private static bool ContainsOrEquals(string target, IEnumerable<string> selected) =>
+            selected.Any(s => string.Equals(s, target, StringComparison.OrdinalIgnoreCase) ||
+                              s.StartsWith(target + "/", StringComparison.OrdinalIgnoreCase));
+
+        private static TreeNodeViewModel? FindNode(IEnumerable<TreeNodeViewModel> nodes, string path)
+        {
+            foreach (var node in nodes)
+            {
+                if (string.Equals(node.FullPath, path, StringComparison.OrdinalIgnoreCase)) return node;
+                if (node.IsFolder && path.StartsWith(node.FullPath + "/", StringComparison.OrdinalIgnoreCase))
+                    return FindNode(node.Children, path);
+            }
+
+            return null;
         }
 
         /// <summary>True when <paramref name="path"/> equals an entry of <paramref name="set"/> or sits under one.</summary>
@@ -1393,7 +1462,7 @@ namespace GitSparseManager.ViewModels
 
             RecomputePendingChanges();
             var paths = GetSelectedPaths();
-            var script = _commandGenerator.GenerateManageShScript(root, paths, KeepWindowOpen, _removedPaths);
+            var script = _commandGenerator.GenerateManageShScript(root, paths, KeepWindowOpen, _removalTargets);
             var savePath = _dialogService.ShowSaveFileDialog(
                 "Shell scripts (*.sh)|*.sh|All files (*.*)|*.*", ".sh", "manage-sparse-checkout");
             if (savePath != null)
@@ -1426,9 +1495,10 @@ namespace GitSparseManager.ViewModels
 
             var selected = GetSelectedPaths();
             var added = new List<string>(_addedPaths);
-            var removed = new List<string>(_removedPaths);
+            var removed = new List<string>(_removalTargets);
+            var dropped = new List<string>(_droppedTargets);
 
-            if (info.IsSparse && added.Count == 0 && removed.Count == 0)
+            if (info.IsSparse && added.Count == 0 && _removedPaths.Count == 0)
             {
                 StatusMessage = "Nothing to apply.";
                 return;
@@ -1471,7 +1541,7 @@ namespace GitSparseManager.ViewModels
                         return;
                 }
 
-                await ExecuteManageApplyAsync(root, info, selected, added, removed, review, choices);
+                await ExecuteManageApplyAsync(root, info, selected, added, removed, dropped, review, choices);
             }
             catch (Exception ex)
             {
@@ -1485,7 +1555,7 @@ namespace GitSparseManager.ViewModels
 
         private async Task ExecuteManageApplyAsync(
             string root, CheckoutInfo info, List<string> selected, List<string> added, List<string> removed,
-            RemovalReviewModel? review, RemovalReviewChoices choices)
+            List<string> dropped, RemovalReviewModel? review, RemovalReviewChoices choices)
         {
             LastApplyLog = string.Empty;
             CleanupLeftovers = new();
@@ -1565,6 +1635,9 @@ namespace GitSparseManager.ViewModels
 
             var parts = new List<string> { $"Applied: +{added.Count} added, \u2212{removed.Count} removed." };
 
+            if (dropped.Count > 0)
+                parts.Add($"Skipped (still selected, not deleted): {string.Join(", ", dropped)}.");
+
             if (keptPartly.Count > 0)
                 parts.Add($"Kept partly (files you chose to keep): {string.Join(", ", keptPartly)}.");
 
@@ -1582,6 +1655,43 @@ namespace GitSparseManager.ViewModels
             }
 
             StatusMessage = string.Join(" ", parts);
+        }
+
+        private bool CanDisableSparseCheckout() => CheckoutInfo?.IsSparse == true;
+
+        [RelayCommand(CanExecute = nameof(CanDisableSparseCheckout))]
+        private async Task DisableSparseCheckoutAsync()
+        {
+            var info = CheckoutInfo;
+            if (info == null || !info.IsSparse) return;
+
+            if (!_dialogService.ShowConfirmation(
+                    "This checks out ALL files of the repository. Continue?", "Disable sparse checkout"))
+                return;
+
+            IsLoading = true;
+            try
+            {
+                StatusMessage = "Disabling sparse checkout…";
+                var auth = ResolveAuthForRemote(info.RemoteUrl);
+                var result = await _gitService.RunAsync(new[] { "sparse-checkout", "disable" }, info.Root, auth);
+                if (result.ExitCode != 0)
+                {
+                    StatusMessage = FirstLines(result.StdErr);
+                    return;
+                }
+
+                await OpenCheckoutAsync(info.Root);
+                StatusMessage = "Sparse checkout disabled. All files are checked out.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         [RelayCommand]
