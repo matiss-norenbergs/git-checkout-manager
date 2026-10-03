@@ -97,6 +97,7 @@ The **Selected Paths** panel lists your selection, and the **Script** panel show
 
 | Field | Purpose |
 |---|---|
+| **Sparse – selected folders / Full clone – everything** | The clone mode, remembered between runs. **Sparse** (default) checks out only the ticked folders. **Full clone** runs a plain `git clone --branch` of the whole repository, with no filter and no sparse-checkout. In Full mode the tree checkboxes and presets are disabled (expanding and search still work), **Selected Paths** shows *All folders*, and you don't need to tick anything before running or saving. **New Branch** and **Initialize submodules** work the same in both modes. |
 | **Clone into** | The parent folder for new checkouts. Remembered between runs. |
 | **Folder** | The checkout's folder name. It's generated from the naming pattern (default `{repo}_{branch}`, see [Settings](#settings)) and follows your repo and branch choices. Type your own name to override it; **Auto** switches back to the generated name. |
 | **New Branch** | Optional. After checkout, creates a **local** branch with this name from the selected branch. Nothing is pushed. Invalid branch names are flagged. |

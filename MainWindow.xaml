@@ -454,6 +454,15 @@
 
                 <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="4" Orientation="Vertical"
                             VerticalAlignment="Top">
+                    <RadioButton GroupName="CloneMode" IsChecked="{Binding IsSparseCloneSelected, Mode=TwoWay}"
+                                 ToolTip="Sparse checkout of the folders ticked in the tree">
+                        <TextBlock Text="Sparse – selected folders" FontSize="12"/>
+                    </RadioButton>
+                    <RadioButton GroupName="CloneMode" IsChecked="{Binding IsFullCloneSelected, Mode=TwoWay}"
+                                 Margin="0,4,0,8"
+                                 ToolTip="Plain git clone of the whole repository; the tree selection is ignored">
+                        <TextBlock Text="Full clone – everything" FontSize="12"/>
+                    </RadioButton>
                     <CheckBox IsChecked="{Binding InitSubmodules}"
                               ToolTip="Appends 'git submodule update --init --remote --recursive' to the script. Note: --remote updates each submodule to the latest commit on its upstream tracking branch, not the pinned superproject commit.">
                         <TextBlock Text="Initialize submodules" FontSize="12"/>
@@ -471,9 +480,9 @@
         <Grid>
             <Grid IsEnabled="{Binding IsOperationEnabled}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="320"/>
+                    <ColumnDefinition x:Name="TreeColumn" Width="2*" MinWidth="320"/>
                     <ColumnDefinition Width="5"/>
-                    <ColumnDefinition Width="380" MinWidth="260"/>
+                    <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="300"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- ── TREE PANEL ───────────────────────────────────────────── -->
@@ -487,6 +496,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*" MinWidth="80"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="10"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -495,9 +505,26 @@
                                        FontWeight="SemiBold" Margin="0,0,6,0"/>
                             <TextBox Grid.Column="1"
                                      Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalAlignment="Center" Padding="5,4"/>
+                                     VerticalAlignment="Center" Padding="5,4"
+                                     ToolTip="Type to filter. Include '/' to match the full path."/>
+                            <TextBlock Grid.Column="2" Text="{Binding SearchResultText}"
+                                       Margin="8,0,0,0" MaxWidth="240" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding SearchResultText}"
+                                       Foreground="{DynamicResource MutedTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SearchResultText}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
 
-                            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                            <StackPanel Grid.Column="4" Orientation="Horizontal"
+                                        IsEnabled="{Binding IsTreeSelectionEnabled}">
                                 <Grid Margin="0,0,6,0" VerticalAlignment="Center">
                                     <ComboBox ItemsSource="{Binding AvailablePresets}"
                                               SelectedItem="{Binding SelectedPreset}"
@@ -550,6 +577,11 @@
                         </Grid>
                     </Border>
 
+                    <TextBlock DockPanel.Dock="Top" Text="Full clone: every folder is included."
+                               FontSize="12" Margin="8,4"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Visibility="{Binding IsFullClone, Converter={StaticResource BoolToVis}}"/>
+
                     <TreeView ItemsSource="{Binding TreeNodes}"
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
@@ -572,13 +604,20 @@
                                                     <DataTrigger Binding="{Binding IsFolder}" Value="False">
                                                         <Setter Property="Visibility" Value="Hidden"/>
                                                     </DataTrigger>
+                                                    <!-- Full clone includes everything: hide the checkboxes (selection is kept) -->
+                                                    <DataTrigger Binding="{Binding DataContext.IsFullClone, RelativeSource={RelativeSource AncestorType=TreeView}}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </CheckBox.Style>
                                     </CheckBox>
 
                                     <!-- Node name: bold for folders, muted for excluded files -->
-                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}">
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="{Binding NameBefore, Mode=OneWay}"/><Run Text="{Binding NameMatch, Mode=OneWay}"
+                                              FontWeight="SemiBold"
+                                              Foreground="{DynamicResource AccentBrush}"/><Run Text="{Binding NameAfter, Mode=OneWay}"/>
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
@@ -593,6 +632,7 @@
                                                         <MultiDataTrigger.Conditions>
                                                             <Condition Binding="{Binding IsFolder}" Value="False"/>
                                                             <Condition Binding="{Binding IsIncluded}" Value="False"/>
+                                                            <Condition Binding="{Binding DataContext.IsFullClone, RelativeSource={RelativeSource AncestorType=TreeView}}" Value="False"/>
                                                         </MultiDataTrigger.Conditions>
                                                         <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
                                                     </MultiDataTrigger>
@@ -613,6 +653,8 @@
                 </DockPanel>
 
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                              ResizeBehavior="PreviousAndNext"
+                              DragCompleted="MainSplitter_DragCompleted"
                               Background="{DynamicResource SplitterBrush}"/>
 
                 <!-- ── RIGHT PANEL ──────────────────────────────────────────── -->

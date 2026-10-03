@@ -26,6 +26,8 @@ namespace GitSparseManager.ViewModels
         /// </summary>
         public bool IsIncluded => _parent == null || _parent.IsChecked != false;
 
+        public TreeNodeViewModel? Parent => _parent;
+
         public ObservableCollection<TreeNodeViewModel> Children { get; } = new();
 
         public TreeNodeViewModel(TreeNode model, TreeNodeViewModel? parent = null)
@@ -125,25 +127,25 @@ namespace GitSparseManager.ViewModels
 
         // ── Filter ────────────────────────────────────────────────────────────
 
-        public void ApplyFilter(string filter)
+        // Visibility, matching and expansion live in TreeSearch; this only holds the highlight split.
+        private int _matchStart = -1;
+        private int _matchLength;
+
+        public string NameBefore => _matchStart < 0 ? Name : Name[.._matchStart];
+        public string NameMatch  => _matchStart < 0 ? string.Empty : Name.Substring(_matchStart, _matchLength);
+        public string NameAfter  => _matchStart < 0 ? string.Empty : Name[(_matchStart + _matchLength)..];
+
+        public void SetHighlight((int Start, int Length)? range)
         {
-            if (string.IsNullOrEmpty(filter))
-            {
-                IsVisible = true;
-                foreach (var child in Children)
-                    child.ApplyFilter(filter);
-                return;
-            }
+            var start  = range?.Start ?? -1;
+            var length = range?.Length ?? 0;
+            if (start == _matchStart && length == _matchLength) return;
 
-            var anyChildVisible = false;
-            foreach (var child in Children)
-            {
-                child.ApplyFilter(filter);
-                if (child.IsVisible) anyChildVisible = true;
-            }
-
-            IsVisible = anyChildVisible ||
-                        Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            _matchStart  = start;
+            _matchLength = length;
+            OnPropertyChanged(nameof(NameBefore));
+            OnPropertyChanged(nameof(NameMatch));
+            OnPropertyChanged(nameof(NameAfter));
         }
     }
 }

@@ -23,6 +23,11 @@ namespace GitSparseManager.Models
         /// <summary>Whether the Script expander in the main window was left open.</summary>
         public bool ScriptPanelExpanded { get; set; } = false;
 
+        public const double DefaultMainSplitRatio = 2.0 / 3.0;
+
+        /// <summary>Main window: tree width as a fraction of tree + right panel (0.4–0.8).</summary>
+        public double MainSplitRatio { get; set; } = DefaultMainSplitRatio;
+
         /// <summary>Submodules window: update to the branch tip (--remote) instead of the pinned commit.</summary>
         public bool SubmoduleLatestFromBranch { get; set; } = false;
 
@@ -31,6 +36,9 @@ namespace GitSparseManager.Models
 
         /// <summary>Submodules window: list only submodules that need attention.</summary>
         public bool SubmodulesShowOnlyProblems { get; set; } = false;
+
+        /// <summary>Clone tab: sparse checkout of selected folders, or a full clone.</summary>
+        public CloneMode CloneMode { get; set; } = CloneMode.Sparse;
 
         public const string DefaultFolderNamePattern = "{repo}_{branch}";
 
