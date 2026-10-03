@@ -183,7 +183,8 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 | **Ready** (green) | Checked out at the commit the main repository expects. |
 | **On a different commit** (blue) | Checked out, but at another commit, typically after updating to the latest from its branch. |
 | **Not initialized** (grey) | Part of your checkout but not downloaded yet. |
-| **Missing from .gitmodules** (red) | The repository contains the submodule, but `.gitmodules` has no entry for it, so Git doesn't know where to download it from. **Ask the repository maintainer to fix `.gitmodules`.** |
+| **Missing from .gitmodules** (red) | The repository contains the submodule, but `.gitmodules` has no entry for it, so Git doesn't know where to download it from. Use **Clone manually…** (below), and ask the repository maintainer to fix `.gitmodules`. |
+| **Cloned manually** (blue) | No `.gitmodules` entry, but the folder holds a repository (for example from **Clone manually…**). Git doesn't manage it as a submodule, so it can't be ticked for *Initialize*. |
 | **Not in your checkout** | Outside your selected folders; shown only with *Show submodules outside my checkout*. |
 
 ### Initializing submodules
@@ -198,6 +199,14 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 Submodules are processed **one at a time**, so one broken submodule never blocks the others. Each row shows its progress (*Queued → Working… → Ready* or *Failed*). Failed rows keep their Git error under **Error details**. **Cancel** stops the run cleanly.
 
 Submodules on your connected GitLab/GitHub server use your saved token. For a submodule on another server, Git Credential Manager may ask you to sign in.
+
+### Fixing a broken submodule locally
+
+Each row has a **⋯** menu (disabled while a run is active). **None of these actions change or commit anything in the repository**: they only affect your checkout, so the real fix (`.gitmodules`) still has to be made by the repository maintainer.
+
+- **Set URL…** (rows with a `.gitmodules` entry): pick a repository from your connected server, or paste a URL. The URL is checked first (`git ls-remote`); if it can't be reached the dialog stays open and shows Git's error. The URL is then stored in your checkout's local `.git/config` and the submodule is initialized with the current *Pinned/Latest* and *Nested* options. The row shows *URL overridden locally: …*.
+- **Reset URL** (only for overridden rows): removes the local override, so the row uses the URL from `.gitmodules` again.
+- **Clone manually…** (only for *Missing from .gitmodules* rows): clones the repository you choose into the (missing or empty) submodule folder and checks out the commit the main repository expects. The row becomes *Cloned manually*. If the clone fails, the folder is left empty as before. A non-empty folder is never touched.
 
 ---
 

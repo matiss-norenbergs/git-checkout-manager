@@ -1156,7 +1156,8 @@ namespace GitCheckoutManager.ViewModels
             if (string.IsNullOrWhiteSpace(root)) return;
 
             var vm = new SubmodulesViewModel(
-                _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService);
+                _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService,
+                () => Repositories.ToList());
             _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
             _dialogService.ShowSubmodules(vm);
 

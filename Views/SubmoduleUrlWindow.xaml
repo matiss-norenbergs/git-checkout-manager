@@ -1,0 +1,58 @@
+<Window x:Class="GitCheckoutManager.Views.SubmoduleUrlWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Choose repository"
+        Width="620" Height="520"
+        MinWidth="460" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource WindowForegroundBrush}">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock x:Name="HeaderText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="CurrentUrlText" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Foreground="{DynamicResource MutedTextBrush}"/>
+            <TextBox x:Name="FilterBox" Margin="0,12,0,0" Padding="4,3"
+                     ToolTip="Filter repositories" TextChanged="FilterBox_TextChanged"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" Margin="0,8,0,0">
+            <ListBox x:Name="RepoList" DisplayMemberPath="PathWithNamespace"
+                     Background="{DynamicResource SubPanelBackgroundBrush}"
+                     Foreground="{DynamicResource WindowForegroundBrush}"
+                     BorderBrush="{DynamicResource PanelBorderBrush}"
+                     SelectionChanged="RepoList_SelectionChanged"/>
+            <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="24"
+                       Foreground="{DynamicResource MutedTextBrush}"
+                       Text="Connect in the Clone tab to pick from your repositories, or paste a URL below."/>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="URL:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox x:Name="UrlBox" Grid.Column="1" Padding="4,3" TextChanged="UrlBox_TextChanged"/>
+            </Grid>
+            <TextBlock x:Name="StatusText" Margin="0,6,0,0" TextWrapping="Wrap" MinHeight="18"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="UseButton" Content="Use this URL" Padding="10,5" Margin="0,0,8,0"
+                    MinWidth="100" IsDefault="True" IsEnabled="False" Click="UseButton_Click"/>
+            <Button x:Name="CancelButton" Content="Cancel" Width="90" Padding="10,5" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
