@@ -1,11 +1,11 @@
 using Velopack;
 using Velopack.Sources;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class UpdateService : IUpdateService
     {
-        private const string RepoUrl = "https://github.com/matiss-norenbergs/git-sparse-manager";
+        private const string RepoUrl = "https://github.com/matiss-norenbergs/git-checkout-manager";
 
         private readonly UpdateManager _manager = new(new GithubSource(RepoUrl, null, false));
         private UpdateInfo? _pending;

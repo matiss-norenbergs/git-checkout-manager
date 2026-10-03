@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace GitSparseManager.Tests;
+namespace GitCheckoutManager.Tests;
 
 /// <summary>Fact that skips itself when git isn't on PATH.</summary>
 public sealed class RequiresGitFactAttribute : FactAttribute

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class CommandGenerator : ICommandGenerator
     {

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="GitCheckoutManager.csproj" />
+  <Project Path="GitCheckoutManager.Tests/GitCheckoutManager.Tests.csproj" />
+</Solution>

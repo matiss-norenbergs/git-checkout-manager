@@ -3,14 +3,14 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>
     /// Builds a repository tree from the remote without downloading file contents.
     /// It keeps a blobless, no-checkout partial clone per repository under
-    /// %LOCALAPPDATA%\GitSparseManager\tree-cache\ and reads the tree objects from it.
+    /// %LOCALAPPDATA%\GitCheckoutManager\tree-cache\ and reads the tree objects from it.
     ///
     /// IMPORTANT: never run checkout, grep, diff, log -p, blame, or anything else that reads file
     /// contents inside the scan repo. It is a blobless partial clone, so any such command would make
@@ -18,9 +18,7 @@ namespace GitSparseManager.Services
     /// </summary>
     public sealed class RemoteTreeService : IRemoteTreeService
     {
-        private static readonly string CacheRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "GitSparseManager", "tree-cache");
+        private static readonly string CacheRoot = AppPaths.TreeCacheFolder;
 
         private const string FilterIgnoredMarker = "filtering not recognized by server";
 

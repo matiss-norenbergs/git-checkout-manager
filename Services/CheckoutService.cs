@@ -1,7 +1,7 @@
 using System.IO;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>
     /// Reads an existing local checkout through plain git commands. No credentials are ever needed

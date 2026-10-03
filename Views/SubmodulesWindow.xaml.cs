@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
-using GitSparseManager.ViewModels;
+using GitCheckoutManager.ViewModels;
 
-namespace GitSparseManager.Views
+namespace GitCheckoutManager.Views
 {
     /// <summary>Modal list of a checkout's submodules, with actions to initialize the selected ones. Bound to a <see cref="SubmodulesViewModel"/> by its caller.</summary>
     public partial class SubmodulesWindow : Window

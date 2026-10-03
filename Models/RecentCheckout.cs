@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace GitSparseManager.Models
+namespace GitCheckoutManager.Models
 {
     /// <summary>A checkout folder the user opened before, shown in the Manage dropdown.</summary>
     public sealed class RecentCheckout : ObservableObject

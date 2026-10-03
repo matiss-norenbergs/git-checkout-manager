@@ -1,6 +1,6 @@
-using GitSparseManager.Services;
+using GitCheckoutManager.Services;
 
-namespace GitSparseManager.Tests;
+namespace GitCheckoutManager.Tests;
 
 public class CheckoutServiceIntegrationTests
 {

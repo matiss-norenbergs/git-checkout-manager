@@ -1,4 +1,4 @@
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public interface IUpdateService
     {

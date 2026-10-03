@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace GitSparseManager.Models
+namespace GitCheckoutManager.Models
 {
     public class Branch
     {

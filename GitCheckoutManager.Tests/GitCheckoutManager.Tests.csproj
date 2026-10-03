@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\GitSparseManager.csproj" />
+    <ProjectReference Include="..\GitCheckoutManager.csproj" />
   </ItemGroup>
 
 </Project>

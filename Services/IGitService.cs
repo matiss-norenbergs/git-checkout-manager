@@ -1,6 +1,6 @@
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>
     /// Basic-auth credentials plus the repository URL they may be sent to. <see cref="ScopeUrl"/>

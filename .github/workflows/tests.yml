@@ -16,4 +16,4 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Test
-        run: dotnet test GitSparseManager.Tests/GitSparseManager.Tests.csproj --configuration Release
+        run: dotnet test GitCheckoutManager.Tests/GitCheckoutManager.Tests.csproj --configuration Release

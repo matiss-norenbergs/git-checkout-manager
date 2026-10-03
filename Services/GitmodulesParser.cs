@@ -1,4 +1,4 @@
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>One submodule section of .gitmodules.</summary>
     public sealed record ModuleConfig(string? Path, string? Url, string? Branch);

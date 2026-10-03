@@ -1,7 +1,7 @@
 using System.IO;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>
     /// Reads submodule state through plain git plumbing. <c>git submodule status</c> is avoided on

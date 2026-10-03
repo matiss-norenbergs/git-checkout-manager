@@ -1,6 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace GitSparseManager.Models
+namespace GitCheckoutManager.Models
 {
     public partial class TreePreset : ObservableObject
     {

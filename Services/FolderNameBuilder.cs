@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>Builds the default clone folder name from the pattern tokens {repo}, {branch} and {base}.</summary>
     public static class FolderNameBuilder

@@ -23,7 +23,7 @@ jobs:
         run: echo "value=$('${{ github.ref_name }}'.TrimStart('v'))" >> $env:GITHUB_OUTPUT
 
       - name: Publish
-        run: dotnet publish GitSparseManager.csproj -c Release -r win-x64 --self-contained false -p:Version=${{ steps.version.outputs.value }} -o publish
+        run: dotnet publish GitCheckoutManager.csproj -c Release -r win-x64 --self-contained false -p:Version=${{ steps.version.outputs.value }} -o publish
 
       - name: Install vpk
         run: dotnet tool install -g vpk
@@ -32,7 +32,7 @@ jobs:
         run: vpk download github --repoUrl https://github.com/${{ github.repository }}
 
       - name: Pack
-        run: vpk pack -u GitSparseManager -v ${{ steps.version.outputs.value }} -p publish --mainExe GitSparseManager.exe --framework net8.0-x64-desktop
+        run: vpk pack -u GitCheckoutManager --packTitle "Git Checkout Manager" -v ${{ steps.version.outputs.value }} -p publish --mainExe GitCheckoutManager.exe --framework net8.0-x64-desktop
 
       - name: Upload to GitHub Release
-        run: vpk upload github --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "GitSparseManager ${{ steps.version.outputs.value }}" --tag v${{ steps.version.outputs.value }} --token ${{ secrets.GITHUB_TOKEN }}
+        run: vpk upload github --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "Git Checkout Manager ${{ steps.version.outputs.value }}" --tag v${{ steps.version.outputs.value }} --token ${{ secrets.GITHUB_TOKEN }}
