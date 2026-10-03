@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class ClipboardService
     {

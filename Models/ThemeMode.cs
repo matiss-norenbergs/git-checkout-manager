@@ -1,4 +1,4 @@
-namespace GitSparseManager.Models
+namespace GitCheckoutManager.Models
 {
     public enum ThemeMode
     {

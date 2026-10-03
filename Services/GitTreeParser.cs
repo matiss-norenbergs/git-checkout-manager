@@ -1,6 +1,6 @@
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>Parses the output of <c>git ls-tree -r -t -z</c> into a flat list of tree nodes.</summary>
     public static class GitTreeParser

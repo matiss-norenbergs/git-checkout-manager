@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Windows;
-using GitSparseManager.Models;
-using GitSparseManager.Services;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
 using Microsoft.Win32;
 using Velopack;
 
-namespace GitSparseManager
+namespace GitCheckoutManager
 {
     public partial class App : Application
     {
@@ -27,6 +27,8 @@ namespace GitSparseManager
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            AppPaths.MigrateLegacyData();
 
             var settings = new SettingsService().LoadSettings();
             _themeMode = settings.ThemeMode;

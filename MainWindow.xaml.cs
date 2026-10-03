@@ -2,11 +2,11 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using GitSparseManager.Models;
-using GitSparseManager.Services;
-using GitSparseManager.ViewModels;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
+using GitCheckoutManager.ViewModels;
 
-namespace GitSparseManager
+namespace GitCheckoutManager
 {
     public partial class MainWindow : Window
     {

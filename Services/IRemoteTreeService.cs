@@ -1,6 +1,6 @@
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public sealed record RemoteTreeResult(string CommitSha, List<TreeNode> Nodes, int SubmoduleCount)
     {

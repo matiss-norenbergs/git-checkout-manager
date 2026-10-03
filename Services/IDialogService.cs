@@ -1,7 +1,7 @@
-using GitSparseManager.Models;
-using GitSparseManager.ViewModels;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.ViewModels;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public interface IDialogService
     {

@@ -1,14 +1,12 @@
 using System.IO;
 using System.Text.Json;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class PresetService : IPresetService
     {
-        private static readonly string FilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "GitSparseManager", "presets.json");
+        private static readonly string FilePath = AppPaths.PresetsFile;
 
         private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 

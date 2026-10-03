@@ -1,4 +1,4 @@
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     /// <summary>The outcome of comparing the selected folders with what a checkout currently has.</summary>
     /// <param name="Added">Selected folders not covered by the baseline.</param>

@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Views
+namespace GitCheckoutManager.Views
 {
     /// <summary>
     /// Shows what a Manage apply would delete inside the folders being removed, and lets the user pick

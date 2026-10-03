@@ -1,7 +1,7 @@
-using GitSparseManager.Models;
-using GitSparseManager.ViewModels;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.ViewModels;
 
-namespace GitSparseManager.Tests;
+namespace GitCheckoutManager.Tests;
 
 public class TreeSearchTests
 {

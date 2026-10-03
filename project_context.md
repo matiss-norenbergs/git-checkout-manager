@@ -1,4 +1,4 @@
-# GitSparseManager: project context for AI coding agents
+# GitCheckoutManager: project context for AI coding agents
 
 Read this before changing code. It describes how the app **currently** works and the rules that keep it correct and safe. User-facing documentation is in `README.md`.
 
@@ -50,7 +50,7 @@ _bin/          prebuilt binaries, intentionally committed for now
 - **Branches come from Git, not the API:** `git ls-remote --heads <url>`.
 
 ### Clone tab tree (`RemoteTreeService`)
-- Per repo, a **blobless, no-checkout partial clone** cache: `%LocalAppData%\GitSparseManager\tree-cache\<sha256-prefix>\repo`.
+- Per repo, a **blobless, no-checkout partial clone** cache: `%LocalAppData%\GitCheckoutManager\tree-cache\<sha256-prefix>\repo`.
 - Flow: `ls-remote` gets the tip sha. If `trees\<sha>.json` is cached, use it. Otherwise clone (`--filter=blob:none --no-checkout --depth 1 --branch`) or `fetch --depth 1 --filter=blob:none`, then `ls-tree -r -t -z <sha>`, parse with `GitTreeParser`, and cache as JSON.
 - Mode `160000` (gitlink) becomes a folder node with `IsSubmodule = true`.
 - **Never run checkout, grep, diff, log -p, blame or anything that reads file contents in the cache repo:** it would download blobs.
@@ -80,7 +80,7 @@ _bin/          prebuilt binaries, intentionally committed for now
 Only **folders** can be selected. `GetCheckedPaths` never yields files, and a defensive filter (`DropFilePaths`) runs before every `sparse-checkout set`. Files show `IsIncluded` (root files always; a folder's direct files whenever it or a descendant is selected).
 
 ### Presets
-`%AppData%\GitSparseManager\presets.json`, keyed `remote:<normalized url>` (same key in both tabs). Paths that resolve to files or don't exist are skipped on load.
+`%AppData%\GitCheckoutManager\presets.json`, keyed `remote:<normalized url>` (same key in both tabs). Paths that resolve to files or don't exist are skipped on load.
 
 ---
 
@@ -109,9 +109,11 @@ Only **folders** can be selected. `GetCheckedPaths` never yields files, and a de
 
 | Data | Location |
 |---|---|
-| Settings, tokens, recent checkouts | `%AppData%\GitSparseManager\settings.json` |
-| Presets | `%AppData%\GitSparseManager\presets.json` |
-| Tree cache | `%LocalAppData%\GitSparseManager\tree-cache\` |
+| Settings, tokens, recent checkouts | `%AppData%\GitCheckoutManager\settings.json` |
+| Presets | `%AppData%\GitCheckoutManager\presets.json` |
+| Tree cache | `%LocalAppData%\GitCheckoutManager\tree-cache\` |
+
+All paths come from `AppPaths`. The project was renamed from GitSparseManager; `AppPaths.MigrateLegacyData()` runs once at startup (before settings load): if the new `%AppData%` folder is missing and `%AppData%\GitSparseManager` exists, it copies `settings.json` and `presets.json` (never moves, never touches the old folder), and it best-effort deletes the old `%LocalAppData%\GitSparseManager\tree-cache`. Repo: `matiss-norenbergs/git-checkout-manager`.
 
 ---
 

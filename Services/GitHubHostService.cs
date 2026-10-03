@@ -4,9 +4,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class GitHubHostService : IGitHostService
     {
@@ -50,7 +50,7 @@ namespace GitSparseManager.Services
 
             // GitHub rejects API requests that have no User-Agent
             headers.UserAgent.Clear();
-            headers.UserAgent.Add(new ProductInfoHeaderValue("GitSparseManager", "1.0"));
+            headers.UserAgent.Add(new ProductInfoHeaderValue("GitCheckoutManager", "1.0"));
         }
 
         private static string ResolveApiBase(string serverUrl)

@@ -1,4 +1,4 @@
-namespace GitSparseManager.Models
+namespace GitCheckoutManager.Models
 {
     /// <summary>
     /// What git reports inside the folders a Manage apply is about to remove, grouped so the user can

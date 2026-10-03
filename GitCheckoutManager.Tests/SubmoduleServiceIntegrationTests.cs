@@ -1,7 +1,7 @@
-using GitSparseManager.Models;
-using GitSparseManager.Services;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
 
-namespace GitSparseManager.Tests;
+namespace GitCheckoutManager.Tests;
 
 public class SubmoduleServiceIntegrationTests
 {

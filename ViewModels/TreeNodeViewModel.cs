@@ -1,8 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     public partial class TreeNodeViewModel : ObservableObject
     {

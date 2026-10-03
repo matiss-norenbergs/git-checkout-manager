@@ -2,9 +2,9 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class SettingsService : ISettingsService
     {
@@ -14,10 +14,8 @@ namespace GitSparseManager.Services
 
         public SettingsService()
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var folder = Path.Combine(appData, "GitSparseManager");
-            Directory.CreateDirectory(folder);
-            _settingsPath = Path.Combine(folder, "settings.json");
+            Directory.CreateDirectory(AppPaths.DataFolder);
+            _settingsPath = AppPaths.SettingsFile;
         }
 
         public AppSettings LoadSettings()

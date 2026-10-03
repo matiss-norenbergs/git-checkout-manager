@@ -1,4 +1,4 @@
-# Git Sparse Checkout Manager
+# Git Checkout Manager
 
 A Windows desktop tool for working with **part of a Git repository**. You pick the folders you need, and the app creates a sparse checkout containing only those. File contents outside your selection are never downloaded.
 
@@ -30,7 +30,7 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 
 ### Installing
 
-Download `GitSparseManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-sparse-manager/releases); the app updates itself.
+Download `GitCheckoutManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-checkout-manager/releases); the app updates itself.
 
 ---
 
@@ -287,7 +287,7 @@ The `.sh` version does the same with Bash syntax.
 
 ## Running tests
 
-The tests live in `GitSparseManager.Tests` (xUnit). The integration tests use a real `git` from `PATH` and temporary folders, and skip themselves when git isn't found.
+The tests live in `GitCheckoutManager.Tests` (xUnit). The integration tests use a real `git` from `PATH` and temporary folders, and skip themselves when git isn't found.
 
 ```
 dotnet test
@@ -301,9 +301,11 @@ They also run in GitHub Actions on every pull request and push to `main`.
 
 | What | Location |
 |---|---|
-| Settings, recent checkouts, encrypted tokens | `%AppData%\GitSparseManager\settings.json` |
-| Presets | `%AppData%\GitSparseManager\presets.json` |
-| Cached folder structures | `%LocalAppData%\GitSparseManager\tree-cache\` (safe to delete; *Settings → Clear tree cache*) |
+| Settings, recent checkouts, encrypted tokens | `%AppData%\GitCheckoutManager\settings.json` |
+| Presets | `%AppData%\GitCheckoutManager\presets.json` |
+| Cached folder structures | `%LocalAppData%\GitCheckoutManager\tree-cache\` (safe to delete; *Settings → Clear tree cache*) |
+
+The app was previously called *Git Sparse Checkout Manager* (`GitSparseManager`). On first start, settings and presets are copied automatically from `%AppData%\GitSparseManager\` (the old folder is left untouched) and the old tree cache is deleted.
 
 Tokens are encrypted with Windows DPAPI for your user account. They don't appear in scripts, cache folders or Git configuration.
 

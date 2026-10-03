@@ -1,6 +1,6 @@
-using GitSparseManager.Models;
+using GitCheckoutManager.Models;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     /// <summary>State of an existing local checkout, read straight from git.</summary>
     public sealed record CheckoutInfo(string Root, string? RemoteUrl, string? Branch, string HeadSha,

@@ -1,11 +1,11 @@
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
-using GitSparseManager.Models;
-using GitSparseManager.ViewModels;
-using GitSparseManager.Views;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.ViewModels;
+using GitCheckoutManager.Views;
 
-namespace GitSparseManager.Services
+namespace GitCheckoutManager.Services
 {
     public class DialogService : IDialogService
     {

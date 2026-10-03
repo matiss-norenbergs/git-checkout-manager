@@ -8,10 +8,10 @@ using System.Text.RegularExpressions;
 using System.Windows.Data;
 using System.Windows.Threading;
 using System.Windows;
-using GitSparseManager.Models;
-using GitSparseManager.Services;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
 
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     public partial class MainViewModel : ObservableObject
     {

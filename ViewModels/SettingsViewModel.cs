@@ -1,9 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using GitSparseManager.Models;
-using GitSparseManager.Services;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
 
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     /// <summary>
     /// Backs the Settings window. Theme and folder-pattern changes are pushed to the callbacks immediately,
@@ -27,7 +27,7 @@ namespace GitSparseManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
         private bool _isCheckingForUpdates;
 
-        public string VersionText { get; } = "Version " + GetAppVersion();
+        public string VersionText { get; } = "Git Checkout Manager – Version " + GetAppVersion();
 
         private static string GetAppVersion()
         {

@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="GitSparseManager.csproj" />
-  <Project Path="GitSparseManager.Tests/GitSparseManager.Tests.csproj" />
-</Solution>

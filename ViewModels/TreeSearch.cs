@@ -1,4 +1,4 @@
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     /// <summary>Outcome of applying a search filter to a tree.</summary>
     /// <param name="MatchCount">Nodes whose own name (or path) matched the filter.</param>

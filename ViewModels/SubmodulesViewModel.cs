@@ -1,10 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
-using GitSparseManager.Models;
-using GitSparseManager.Services;
+using GitCheckoutManager.Models;
+using GitCheckoutManager.Services;
 
-namespace GitSparseManager.ViewModels
+namespace GitCheckoutManager.ViewModels
 {
     /// <summary>One line of the Submodules window.</summary>
     public partial class SubmoduleRowViewModel : ObservableObject
