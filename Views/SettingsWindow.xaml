@@ -1,0 +1,98 @@
+<Window x:Class="GitSparseManager.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings"
+        Width="420" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource WindowForegroundBrush}">
+
+    <Window.Resources>
+        <!-- One bordered block per group of settings; add further sections to the StackPanel below. -->
+        <Style x:Key="SettingsSection" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="16">
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="Appearance" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Theme:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Left" Width="160" Padding="5,3"
+                              ItemsSource="{Binding ThemeModes}"
+                              SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay}"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="Clone" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="Folder name pattern:" Margin="0,0,0,4"/>
+                <TextBox Text="{Binding FolderNamePattern, UpdateSourceTrigger=PropertyChanged}" Padding="5,4"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           Text="{}{repo} = repository name · {branch} = new branch if set, else selected branch · {base} = selected branch"/>
+                <TextBlock Text="{Binding FolderNameExample}" Margin="0,4,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="Tree cache" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Current size:" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding CacheSizeText}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Clear tree cache" Padding="14,5"
+                            Command="{Binding ClearTreeCacheCommand}"
+                            ToolTip="Delete the locally cached tree data for every repository"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="About" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Check for updates" Padding="14,5"
+                            Command="{Binding CheckForUpdatesCommand}"/>
+                </Grid>
+                <TextBlock Text="{Binding UpdateStatusText}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <Button Content="Close" Width="90" Padding="10,5"
+                HorizontalAlignment="Right" Margin="0,6,0,0"
+                IsDefault="True" IsCancel="True"/>
+    </StackPanel>
+</Window>

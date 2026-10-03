@@ -14,8 +14,13 @@ namespace GitSparseManager.Services
     {
         Task<List<string>?> GetSparseCheckoutPathsAsync(string localRepoPath);
 
+        /// <param name="allowInteractiveAuth">
+        /// When true, Git Credential Manager may open its login window. Only for actions the user
+        /// started; background calls must never block on a window.
+        /// </param>
         Task<GitResult> RunAsync(IEnumerable<string> args, string? workingDirectory = null,
-                                 GitAuth? auth = null, CancellationToken ct = default);
+                                 GitAuth? auth = null, CancellationToken ct = default,
+                                 bool allowInteractiveAuth = false);
 
         Task<List<Branch>> ListRemoteBranchesAsync(string repoUrl, GitAuth? auth, CancellationToken ct = default);
     }

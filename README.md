@@ -1,225 +1,307 @@
-# Git Sparse Checkout Manager — User Guide
+# Git Sparse Checkout Manager
 
-Git Sparse Checkout Manager is a Windows desktop tool that helps you clone **only the folders and files you need** from a repository, instead of downloading the entire repo. It generates ready-to-run Git commands so you never have to write the sparse-checkout syntax by hand.
+A Windows desktop tool for working with **part of a Git repository**. You pick the folders you need, and the app creates a sparse checkout containing only those. File contents outside your selection are never downloaded.
 
----
-
-## How It Works — Overview
-
-1. Scan a local folder to load the repository structure as a tree.
-2. Tick the folders and files you want.
-3. Click **Generate Script** to get the Git commands.
-4. Copy, save, or run the script.
+It works with **GitLab** (including self-hosted servers) and **GitHub**, and handles the tricky parts for you: cone-mode rules, partial clones, submodules, and safely removing folders from an existing checkout.
 
 ---
 
-## The Interface at a Glance
+## Contents
 
-| Area | What it does |
-|---|---|
-| **Mode Tabs** (top-left) | Switch between **Clone** and **Manage Checkout** modes |
-| **Theme selector** (top-right) | Choose System, Light, or Dark theme |
-| **Connection Bar** | Enter a GitLab URL and Personal Access Token to load repositories and branches from GitLab |
-| **Repo / Branch Bar** | Set clone URL, branch (type to filter), optional new-branch name, target folder, and script options (submodules, CMD window behaviour) |
-| **Scan Bar** | Scan a local folder to load the repository tree, or load a previously saved profile |
-| **Preset Bar** | Save, load, rename, and delete named path selections for the current scan |
-| **Repository Tree** (left panel) | Checkboxes to select folders and files; deep folders expand on demand |
-| **Selected Paths** (right, top) | Live list of every path you have ticked |
-| **Generated Script** (right, bottom) | The Git commands, ready to copy or run |
-| **Action Buttons** (bottom) | Generate, Copy, Save .bat, Save .sh, Execute |
-| **Status Bar** (very bottom) | Progress messages and error details |
-
----
-
-## Modes
-
-The app has two modes, selectable via the radio buttons at the top of the window.
-
-| Mode | Purpose |
-|---|---|
-| **Clone** | Generate a script that clones a new sparse copy of a repository (default) |
-| **Manage Checkout** | Update the sparse-checkout paths of an existing full local clone |
-
----
-
-## Main Workflow
-
-### Connecting to GitLab
-
-A GitLab connection is required to use the app. Enter your GitLab URL and a Personal Access Token in the **Connection Bar** and click **Connect**. All other controls are disabled until the connection succeeds.
-
-**How to create a token:**
-1. In GitLab, open your profile menu (top-right avatar) and go to **Edit profile → Access Tokens**.
-2. Click **Add new token**, give it a name, and optionally set an expiry date.
-3. Under **Scopes**, tick **`read_api`** only — no other permissions are needed.
-4. Click **Create personal access token** and copy the value immediately. GitLab will not show it again.
-
-The token is encrypted with DPAPI and saved locally; you only need to enter it once.
-
----
-
-### Step 1 — Scan a Local Folder
-
-1. Enter the path to a local folder (a full clone or any plain copy of the repository) in the **Scan Path** field, or click **Browse…** to pick one.
-2. Click **Scan**. The app walks the folder tree (skipping the `.git` directory) and displays it in the **Repository Tree**. The first four levels are loaded immediately; deeper folders are expanded on demand when you open them in the tree.
-3. A file named `sparse-checkout-cache.json` is automatically saved inside the scanned folder. You can reload it later without rescanning (see [Loading a Saved Profile](#loading-a-saved-profile)).
-
-### Step 2 — Set Script Options (Optional)
-
-In the **Repo / Branch Bar**, you can fill in details that will be written into the generated script:
-
-| Field | Purpose |
-|---|---|
-| **Repository** | The clone URL to use in the script (populated automatically if you connected to GitLab) |
-| **Branch** | The branch to check out. Type in the field to filter the list when connected to GitLab |
-| **New Branch** | If filled in, the script appends `git checkout -b <name>` to create a new local branch |
-| **Target Folder** | Local path to clone into. Leave blank to use the repository name |
-| **Initialize submodules** | Appends a `git submodule update --init --remote --recursive` call for each detected submodule |
-| **Keep CMD window open** | Adds `pause` at the end of the `.bat` script so the Command Prompt stays open after the script finishes |
-
-### Step 3 — Browse and Select
-
-- **Check a folder** to select it and all its contents.
-- **Uncheck a folder** to deselect everything inside it.
-- Checking an individual file selects only that file; the parent folder shows a partial (indeterminate) state.
-- Use the **Search tree** box to filter visible nodes by name — useful for large repositories.
-
-### Step 4 — Generate and Export
-
-1. Click **Generate Script**. The **Selected Paths** and **Generated Script** panels populate on the right.
-2. Choose what to do with the script:
-
-| Button | Action |
-|---|---|
-| **Generate Script** | Regenerates the script from current selections |
-| **Copy to Clipboard** | Copies the script text so you can paste it into a terminal |
-| **Save .bat** | Saves a Windows batch file (`.bat`) you can double-click or run in Command Prompt |
-| **Save .sh** | Saves a Bash shell script (`.sh`) for use on Linux / macOS / Git Bash |
-| **Execute Locally** | Prompts you to pick a parent folder, then runs the batch script directly on this machine in a Command Prompt window |
-
-> **Execute Locally** asks you to choose a parent folder and then asks for confirmation before running. Ensure Git is installed and accessible in your PATH.
-
----
-
-## Manage Checkout Mode
-
-Use **Manage Checkout** when you already have a full local clone and want to change which folders are materialised on disk without re-cloning.
-
-### How it works
-
-1. Switch to **Manage Checkout** using the mode tabs at the top.
-2. Enter the path to your local Git repository in the **Repo Path** field (the folder that contains `.git`).
-3. Optionally fill in **Tree Source Path** to scan a different folder for the tree structure — useful when a separate full copy is available for browsing but you want to apply changes to a different repo.
-4. Click **Scan**. The app reads the repo's current sparse-checkout paths with `git sparse-checkout list` and pre-ticks them in the tree.
-5. Check or uncheck folders and files to reflect what you want materialised.
-6. Choose an action:
-
-| Button | Action |
-|---|---|
-| **Generate Script** | Produces a `manage-sparse-checkout.bat` in the script panel without touching the repo |
-| **Save .bat** | Saves the manage script as a `.bat` file |
-| **Save .sh** | Saves the manage script as a `.sh` file |
-| **Apply** | Runs the changes directly: discards local changes in removed paths, cleans them from disk (`git restore` + `git clean -ffdx`), then runs `git sparse-checkout set` |
-
-> **Apply** will permanently delete files from removed paths (including `node_modules` and other ignored files). A confirmation prompt lists how many paths will be removed before proceeding.
-
-### What the manage script does
-
-For paths being **removed**, the script:
-1. Runs a dry-run (`git clean -ffdxn`) and pauses so you can review what would be deleted.
-2. Restores tracked files (`git restore`) and hard-cleans the directory (`git clean -ffdx`).
-3. Removes any remaining folder with `Remove-Item -Recurse -Force`.
-
-For all selected paths it then runs `git sparse-checkout set` to update the repo's sparse-checkout config.
-
----
-
-## Loading a Saved Profile
-
-If you previously scanned a folder, a `sparse-checkout-cache.json` file was saved there.
-
-Click **Load Profile**, select that JSON file, and the tree reloads instantly — no internet connection or rescan required.
-
-If the original scan folder is still present on disk, lazy loading continues to work after loading a profile.
-
----
-
-## Presets
-
-Presets let you save and restore named path selections for a scan.
-
-| Button | Action |
-|---|---|
-| **Save…** | Prompts for a name and saves the current selection as a preset |
-| **Load** | Applies the selected preset's paths to the tree |
-| **Rename** | Renames the selected preset |
-| **Delete** | Deletes the selected preset |
-
-Presets are stored per scan folder in `%AppData%\GitSparseManager\presets.json` and are available whenever you open or rescan the same folder. If a saved path no longer exists in the tree (e.g. after a rescan that picked up changes), it is silently skipped.
-
----
-
-## Understanding the Generated Script
-
-The script uses Git's sparse-checkout "cone mode" for best performance. Example output:
-
-```bat
-@echo off
-
-git clone --filter=blob:none --no-checkout "https://gitlab.com/group/repo.git" "MyProject"
-
-cd /d "MyProject"
-
-git sparse-checkout init --cone
-
-git sparse-checkout set ^
-  "Assets/Maps/Desert" ^
-  "Assets/Maps/Snow"
-
-git checkout main
-
-git checkout -b my-feature-branch
-```
-
-| Line | Explanation |
-|---|---|
-| `git clone --filter=blob:none --no-checkout` | Clones the repository metadata only, skipping all file content until checkout |
-| `cd /d "…"` | Changes into the cloned folder |
-| `git sparse-checkout init --cone` | Enables cone-mode sparse checkout |
-| `git sparse-checkout set …` | Declares which folders/files to materialise on disk |
-| `git checkout <branch>` | Checks out the selected branch, downloading only the declared paths |
-| `git checkout -b <name>` | (Optional) Creates a new local branch from this point |
-
----
-
-## Theme
-
-A **Theme** dropdown in the top-right corner lets you choose:
-
-| Option | Behaviour |
-|---|---|
-| **System** | Follows the Windows dark/light mode setting automatically |
-| **Light** | Always uses the light theme |
-| **Dark** | Always uses the dark theme |
-
-The title bar colour updates to match the selected theme. Your choice is saved and restored on the next launch.
+- [Requirements](#requirements)
+- [The two tabs](#the-two-tabs)
+- [Connecting](#connecting)
+- [Clone tab: create a new sparse checkout](#clone-tab-create-a-new-sparse-checkout)
+- [Manage Checkout tab: change an existing checkout](#manage-checkout-tab-change-an-existing-checkout)
+- [Submodules window](#submodules-window)
+- [Presets](#presets)
+- [Settings](#settings)
+- [The generated script](#the-generated-script)
+- [Where data is stored](#where-data-is-stored)
+- [Tips and troubleshooting](#tips-and-troubleshooting)
 
 ---
 
 ## Requirements
 
 - Windows 10 or later
-- .NET 8 Desktop Runtime
-- Access to a GitLab instance with a Personal Access Token
-- Git installed and available in your system PATH (required for **Execute Locally** and **Apply** in Manage Checkout mode)
+- **Git for Windows**, available on `PATH` (Git 2.36 or newer recommended)
+- A GitLab or GitHub account with a Personal Access Token
+
+### Installing
+
+Download `GitSparseManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-sparse-manager/releases); the app updates itself.
 
 ---
 
-## Tips
+## The two tabs
 
-- **Large repositories**: use the **Search tree** filter to quickly find the paths you need. Deep folders load on demand when expanded.
-- **Share with teammates**: scan once, save the cache JSON, and share it — teammates can use **Load Profile** to load the same tree without having a local copy of the repository.
-- **Cross-platform**: save a `.sh` script from Windows, then run it on a Linux or macOS machine where Git is available.
-- **Safe to re-run**: the generated `git clone` command will fail if the target folder already exists — delete or rename the folder before running the script again.
-- **Token is saved**: your GitLab URL and Personal Access Token are encrypted and stored between sessions; you do not need to re-enter them each time you launch the app.
-- **Reuse selections**: use Presets to save common path combinations and switch between them instantly.
+| Tab | Use it to |
+|---|---|
+| **Clone** | Create a **new** sparse checkout of a repository: pick the repo, branch and folders, then run or save the script. |
+| **Manage Checkout** | Change **an existing** checkout on disk: add or remove folders, and manage its submodules. |
+
+The **⚙** button in the top-right corner opens [Settings](#settings).
+
+---
+
+## Connecting
+
+The Clone tab needs a connection to your Git host. The Manage tab works on local checkouts and doesn't need one, but it uses your saved tokens when it has to download files.
+
+1. Choose the **Host**: `GitLab` or `GitHub`.
+2. Enter the **Server URL**. For GitLab, use your server's address, e.g. `https://gitlab.example.com`. For GitHub, use `https://github.com` (filled in automatically).
+3. Paste your **Personal Access Token** and click **Connect**.
+
+The URL and token are remembered **per host**, so you can switch between GitLab and GitHub without retyping them. Tokens are encrypted with Windows DPAPI and never written into scripts, URLs or Git config files.
+
+### Creating a token
+
+**GitLab:** avatar → **Edit profile** → **Access tokens** → **Add new token**. Tick the scopes **`read_api`** (to list repositories) and **`read_repository`** (to read folder structures and download files).
+
+**GitHub:** **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
+- Repository access: *All repositories* (or the ones you need)
+- Repository permissions: **Contents → Read-only** (Metadata is added automatically)
+
+A classic token with the `repo` scope also works, but grants much more than the app needs.
+
+> The app never writes to the server, so read-only permissions are enough.
+
+---
+
+## Clone tab: create a new sparse checkout
+
+### 1. Choose the source
+
+Pick a **Repository** and a **Branch**. Both dropdowns can be filtered by typing.
+
+The folder tree loads automatically. The app downloads only the repository's **folder structure** (no file contents, typically a few hundred KB to a few MB), so even very large repositories load in seconds. The result is cached per commit, so switching back to a branch you've already viewed is instant.
+
+- **Refresh tree** fetches the latest structure for the selected branch.
+- When you switch branches, folders you've ticked **stay ticked** if they also exist on the new branch.
+
+### 2. Choose the folders
+
+Tick folders in the tree. Use **Search** to find folders by name.
+
+- **Only folders can be selected.** Files show their status instead:
+  - **normal text** means the file will be included
+  - **grey text** means it won't
+- Files at the repository root are **always** included.
+- When you select a folder, the files directly inside each of its **parent folders** come along too. That's how Git's cone mode works.
+- Submodules are marked **(submodule)**.
+
+The **Selected Paths** panel lists your selection, and the **Script** panel shows the generated script, updating as you tick.
+
+### 3. Choose the destination and options
+
+| Field | Purpose |
+|---|---|
+| **Clone into** | The parent folder for new checkouts. Remembered between runs. |
+| **Folder** | The checkout's folder name. It's generated from the naming pattern (default `{repo}_{branch}`, see [Settings](#settings)) and follows your repo and branch choices. Type your own name to override it; **Auto** switches back to the generated name. |
+| **New Branch** | Optional. After checkout, creates a **local** branch with this name from the selected branch. Nothing is pushed. Invalid branch names are flagged. |
+| **Initialize submodules** | Initializes the submodules inside your selected folders (see [the generated script](#the-generated-script)). |
+| **Keep CMD window open** | Keeps the console open after a successful run. After a failure it always stays open. |
+
+The line under the fields shows the **full target path**. It turns red, and Execute is disabled, when the folder already exists and isn't empty.
+
+### 4. Run it
+
+| Button | Action |
+|---|---|
+| **Execute Locally** | Runs the script on this machine in a console window and creates the checkout at the previewed path. |
+| **Copy script** | Copies the script to the clipboard. |
+| **Save .bat** / **Save .sh** | Saves the script for Windows or for Bash (Git Bash, Linux, macOS). Saved scripts use only the folder **name**, so they create the checkout wherever you run them. |
+
+After **Execute Locally**, the status bar reports the result:
+
+| Result | Meaning |
+|---|---|
+| *Checkout created.* | Everything succeeded. |
+| *Checkout created, but some submodules failed to initialize.* | The checkout is fine; check the console for which submodules failed. |
+| *Script failed, see the console window.* | A step failed; the console stays open with the error. |
+
+Successful checkouts are added to the **recent checkouts** list in the Manage tab.
+
+---
+
+## Manage Checkout tab: change an existing checkout
+
+### Opening a checkout
+
+- Pick one from the **Checkout** dropdown (recently used checkouts), or click **Browse…** and choose any folder inside a checkout. The app finds the repository root itself.
+- The most recent checkout opens automatically when you switch to this tab.
+- Checkouts that no longer exist on disk are shown greyed out with **(missing)**. Selecting one offers to remove it from the list.
+
+The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
+
+The tree is read from the checkout itself, so it needs no network connection and matches exactly what's checked out, including local commits you haven't pushed. Your current folders are pre-ticked. If the checkout isn't sparse yet, every folder starts ticked, and applying turns sparse checkout on.
+
+### Changing folders
+
+Tick or untick folders. **Pending Changes** lists what will happen:
+
+```
++ apps/mobile        ← will be added (files downloaded)
+− libs/legacy        ← will be removed from disk
+```
+
+Click **Apply Now** to perform the changes.
+
+### Removing folders safely
+
+Before anything is deleted, the app checks what's inside the folders you're removing. If it finds anything besides the repository's own files, the **Review removal** window opens with up to three groups:
+
+| Group | Examples | Deleted by default? |
+|---|---|---|
+| **Ignored files** | `node_modules/`, build output, logs | **Yes** |
+| **Untracked files** | new files you created | No |
+| **Changed files** | files you edited | No |
+
+Tick **Delete these** for each group you want removed. Choosing to delete untracked or changed files asks for a second confirmation, because it can't be undone.
+
+> **Tip:** commit your changes before removing a folder. Committed work stays in Git history even after the folder is gone from your disk.
+
+After applying, the app checks the disk and reports what **actually** happened, for example:
+
+- *Kept partly: src/legacy*: you chose to keep some files, so the folder still exists.
+- *Could not delete: tools/x (file in use)*: another program (an editor, Explorer) is using the folder. Close it and click **Retry cleanup**.
+
+Git warnings, if any, appear under **Last apply output**.
+
+**Copy script**, **Save .bat** and **Save .sh** produce an equivalent script, for people who prefer to run the commands themselves.
+
+---
+
+## Submodules window
+
+Click **Submodules…** in the Manage tab to see every submodule of the open checkout:
+
+| State | Meaning |
+|---|---|
+| **Ready** (green) | Checked out at the commit the main repository expects. |
+| **On a different commit** (blue) | Checked out, but at another commit, typically after updating to the latest from its branch. |
+| **Not initialized** (grey) | Part of your checkout but not downloaded yet. |
+| **Missing from .gitmodules** (red) | The repository contains the submodule, but `.gitmodules` has no entry for it, so Git doesn't know where to download it from. **Ask the repository maintainer to fix `.gitmodules`.** |
+| **Not in your checkout** | Outside your selected folders; shown only with *Show submodules outside my checkout*. |
+
+### Initializing submodules
+
+1. Tick the submodules to initialize, or click **Select all with problems**.
+2. Choose:
+   - **Pinned commit**: the exact commit the main repository expects (recommended).
+   - **Latest from branch**: the newest commit on the submodule's branch. The main repository will then show the submodule as changed.
+   - **Include nested submodules**: also initializes submodules inside submodules.
+3. Click **Initialize selected**.
+
+Submodules are processed **one at a time**, so one broken submodule never blocks the others. Each row shows its progress (*Queued → Working… → Ready* or *Failed*). Failed rows keep their Git error under **Error details**. **Cancel** stops the run cleanly.
+
+Submodules on your connected GitLab/GitHub server use your saved token. For a submodule on another server, Git Credential Manager may ask you to sign in.
+
+---
+
+## Presets
+
+Presets save a named folder selection for a repository and are shared between both tabs.
+
+| Control | Action |
+|---|---|
+| **Preset…** dropdown | Choose a saved preset |
+| **Load** | Ticks the preset's folders in the tree |
+| **Save…** | Saves the current selection under a name |
+| **⋯ → Rename / Delete** | Renames or deletes the selected preset |
+
+Folders that don't exist in the current tree (for example on another branch) are skipped when loading.
+
+---
+
+## Settings
+
+Open with **⚙** (top-right).
+
+| Setting | Purpose |
+|---|---|
+| **Theme** | System, Light or Dark. Applies immediately. |
+| **Folder name pattern** | How the Clone tab names new checkout folders. Tokens: `{repo}` repository name, `{branch}` the **New Branch** name if set, otherwise the selected branch, `{base}` always the selected branch. Default: `{repo}_{branch}`. |
+| **Tree cache** | Shows the size of the cached folder structures and lets you clear them. |
+
+---
+
+## The generated script
+
+A Clone script (`.bat`) looks like this:
+
+```bat
+@echo off
+chcp 65001 >nul
+
+git clone --filter=blob:none --no-checkout "https://gitlab.example.com/group/repo.git" "repo_feature-login"
+if errorlevel 1 goto :failed
+
+cd /d "repo_feature-login"
+if errorlevel 1 goto :failed
+
+git sparse-checkout init --cone
+if errorlevel 1 goto :failed
+
+git sparse-checkout set ^
+  "apps/web" ^
+  "libs/core"
+if errorlevel 1 goto :failed
+
+git checkout "main"
+if errorlevel 1 goto :failed
+
+git checkout -b "feature-login"
+if errorlevel 1 goto :failed
+
+rem …submodule step (only with "Initialize submodules")…
+
+exit /b 0
+
+:failed
+echo FAILED — see the output above
+pause
+exit /b 1
+```
+
+| Step | What it does |
+|---|---|
+| `chcp 65001` | Lets the console handle non-ASCII paths and names (e.g. `Ā`, `ū`). |
+| `git clone --filter=blob:none --no-checkout` | Downloads history and folder structure, but **no file contents**. |
+| `git sparse-checkout init --cone` / `set …` | Limits the checkout to the selected folders. |
+| `git checkout "<branch>"` | Checks out the branch, downloading **only** the files in your folders. |
+| `git checkout -b "<new>"` | Optional: creates your local working branch. |
+| `if errorlevel 1 goto :failed` | Stops at the first failing step and keeps the window open. |
+
+**Submodule step** (with *Initialize submodules* ticked): every submodule listed in `.gitmodules` that lies inside your selected folders is updated **individually** (`git submodule update --init --remote --recursive -- <path>`), so a broken submodule can't stop the healthy ones. Submodules that exist in the repository but are missing from `.gitmodules` are reported with a `WARNING:` line. If any submodule failed, the script ends with *"Some submodules failed to initialize"* and exit code 2.
+
+> **Note:** the script's submodule step uses `--remote`, i.e. the **latest commit on each submodule's branch**. To get the **pinned** commits instead, leave the box unticked and use the [Submodules window](#submodules-window) after cloning.
+
+**Exit codes:** `0` success · `1` a step failed · `2` checkout created but some submodules failed.
+
+The `.sh` version does the same with Bash syntax.
+
+---
+
+## Where data is stored
+
+| What | Location |
+|---|---|
+| Settings, recent checkouts, encrypted tokens | `%AppData%\GitSparseManager\settings.json` |
+| Presets | `%AppData%\GitSparseManager\presets.json` |
+| Cached folder structures | `%LocalAppData%\GitSparseManager\tree-cache\` (safe to delete; *Settings → Clear tree cache*) |
+
+Tokens are encrypted with Windows DPAPI for your user account. They don't appear in scripts, cache folders or Git configuration.
+
+---
+
+## Tips and troubleshooting
+
+- **The Clone tab shows no repositories:** check the host, server URL and token, and that the token has the scopes listed in [Creating a token](#creating-a-token).
+- **"Folder already exists and isn't empty":** change the **Folder** name or **Clone into**, or remove the old folder.
+- **The tree looks outdated:** click **Refresh tree**.
+- **A folder won't go away after Apply:** another program has it open. Close it and click **Retry cleanup**.
+- **A submodule fails with "repository not found":** its URL in `.gitmodules` is wrong, or you don't have access to that repository.
+- **A submodule is "Missing from .gitmodules":** it can't be initialized until someone adds it to `.gitmodules` in the repository.
+- **Large repositories:** the app only downloads folder structures and the files you select, so the size of the full repository doesn't matter.

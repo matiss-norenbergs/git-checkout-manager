@@ -42,6 +42,11 @@
     <SolidColorBrush x:Key="AccentBorderBrush" Color="#FF1472C0"/>
     <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFFFF"/>
 
+    <SolidColorBrush x:Key="ScrollBarTrackBrush" Color="#00000000"/>
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#FFC1C1C1"/>
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#FFA8A8A8"/>
+    <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#FF8F8F8F"/>
+
     <SolidColorBrush x:Key="OverlayBrush" Color="#90FFFFFF"/>
     <SolidColorBrush x:Key="DialogBackgroundBrush" Color="#FFFFFFFF"/>
     <SolidColorBrush x:Key="DialogBorderBrush" Color="#FFAAAAAA"/>
@@ -270,5 +275,44 @@
         <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="8,5"/>
+    </Style>
+
+    <!-- Context menus (e.g. the preset "..." menu) -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{DynamicResource DialogBackgroundBrush}"
+                            BorderBrush="{DynamicResource DialogBorderBrush}"
+                            BorderThickness="1" Padding="0,3">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Bd" Background="Transparent" Padding="14,5" MinWidth="110">
+                        <ContentPresenter x:Name="Hdr" ContentSource="Header" RecognizesAccessKey="True"
+                                          VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Hdr" Property="TextElement.Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 </ResourceDictionary>

@@ -3,6 +3,7 @@ using System.Windows;
 using GitSparseManager.Models;
 using GitSparseManager.Services;
 using Microsoft.Win32;
+using Velopack;
 
 namespace GitSparseManager
 {
@@ -11,6 +12,17 @@ namespace GitSparseManager
         private const string LightThemePath = "Themes/LightTheme.xaml";
         private const string DarkThemePath = "Themes/DarkTheme.xaml";
         private ThemeMode _themeMode = ThemeMode.System;
+
+        [STAThread]
+        private static void Main(string[] args)
+        {
+            // Velopack must run before anything else (install/update hooks exit the process early).
+            VelopackApp.Build().Run();
+
+            App app = new();
+            app.InitializeComponent();
+            app.Run();
+        }
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -21,6 +33,8 @@ namespace GitSparseManager
 
             ApplyTheme();
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+
+            new MainWindow().Show();
         }
 
         protected override void OnExit(ExitEventArgs e)

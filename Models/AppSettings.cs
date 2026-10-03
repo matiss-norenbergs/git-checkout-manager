@@ -16,9 +16,28 @@ namespace GitSparseManager.Models
         // Legacy single-host settings, kept so existing settings.json files still load.
         public string GitLabUrl { get; set; } = "http://gitlab.local";
         public string EncryptedToken { get; set; } = string.Empty;
-        public List<RepositoryProfile> Repositories { get; set; } = new();
         public bool InitSubmodules { get; set; } = false;
         public bool KeepWindowOpen { get; set; } = true;
         public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
+
+        /// <summary>Whether the Script expander in the main window was left open.</summary>
+        public bool ScriptPanelExpanded { get; set; } = false;
+
+        /// <summary>Submodules window: update to the branch tip (--remote) instead of the pinned commit.</summary>
+        public bool SubmoduleLatestFromBranch { get; set; } = false;
+
+        /// <summary>Submodules window: also initialize nested submodules (--recursive).</summary>
+        public bool SubmoduleIncludeNested { get; set; } = true;
+
+        /// <summary>Submodules window: list only submodules that need attention.</summary>
+        public bool SubmodulesShowOnlyProblems { get; set; } = false;
+
+        public const string DefaultFolderNamePattern = "{repo}_{branch}";
+
+        /// <summary>Folder where Clone checkouts are created; remembered between runs.</summary>
+        public string CloneParentFolder { get; set; } = string.Empty;
+
+        /// <summary>Tokens: {repo}, {branch} (new branch if set, else the selected one), {base} (selected branch).</summary>
+        public string FolderNamePattern { get; set; } = DefaultFolderNamePattern;
     }
 }

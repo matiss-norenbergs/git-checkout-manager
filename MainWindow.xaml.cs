@@ -22,15 +22,16 @@ namespace GitSparseManager
             var settingsService = new SettingsService();
             var clipboard       = new ClipboardService();
             var dialogs         = new DialogService();
-            var treeCache       = new TreeCacheService();
-            var localScan       = new LocalScanService();
             var presetService   = new PresetService();
             var gitService      = new GitService();
             var remoteTree      = new RemoteTreeService(gitService);
             var checkoutService = new CheckoutService(gitService);
+            var submoduleService = new SubmoduleService(gitService);
+            var updateService   = new UpdateService();
 
-            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, treeCache, localScan, presetService, gitService, remoteTree, checkoutService);
+            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService, updateService);
             DataContext = _viewModel;
+            Loaded += async (_, _) => await _viewModel.CheckForUpdatesOnStartupAsync();
 
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -58,6 +59,27 @@ namespace GitSparseManager
         {
             if (DataContext is MainViewModel vm)
                 vm.Token = TokenBox.Password;
+        }
+
+        private void PresetMenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = PresetMenuButton.ContextMenu;
+            if (menu == null) return;
+
+            menu.DataContext = DataContext;
+            menu.PlacementTarget = PresetMenuButton;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>Sizes the right panel's script row: compact when collapsed, resizable when expanded.</summary>
+        private void ScriptExpander_Changed(object sender, RoutedEventArgs e)
+        {
+            var expanded = ((Expander)sender).IsExpanded;
+
+            ScriptSplitter.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            ScriptRow.MinHeight = expanded ? 120 : 0;
+            ScriptRow.Height = expanded ? new GridLength(2, GridUnitType.Star) : GridLength.Auto;
         }
 
         private void CheckoutCombo_DropDownOpened(object sender, System.EventArgs e)

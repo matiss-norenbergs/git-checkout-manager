@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows.Data;
 using System.Windows.Threading;
 using System.Windows;
@@ -19,22 +20,22 @@ namespace GitSparseManager.ViewModels
         private readonly ISettingsService _settingsService;
         private readonly ClipboardService _clipboardService;
         private readonly IDialogService _dialogService;
-        private readonly ITreeCacheService _treeCacheService;
-        private readonly ILocalScanService _localScanService;
         private readonly IPresetService _presetService;
         private readonly IGitService _gitService;
         private readonly IRemoteTreeService _remoteTreeService;
         private readonly ICheckoutService _checkoutService;
+        private readonly ISubmoduleService _submoduleService;
+        private readonly IUpdateService _updateService;
 
         private IGitHostService _hostService;
         private AppSettings _appSettings;
         private List<TreeNodeViewModel> _allRootNodes = new();
-        private List<string> _currentSparseCheckoutPaths = new();
         private bool _suppressHostSync;
         private CancellationTokenSource? _treeLoadCts;
 
         // Manage-mode checkout state
-        private readonly DispatcherTimer _pendingChangesTimer;
+        // Debounces live script regeneration (Clone) and pending-change recomputation (Manage).
+        private readonly DispatcherTimer _regenerateTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
         private List<string> _baselinePaths = new();
         private List<string> _addedPaths = new();
         private List<string> _removedPaths = new();
@@ -42,6 +43,9 @@ namespace GitSparseManager.ViewModels
 
         // Path of the checkout being opened or already open; guards against re-opening on selection echoes.
         private string? _activeCheckoutPath;
+
+        // .bat files carry `chcp 65001`, so cmd needs UTF-8 and a BOM would break the first line.
+        private static readonly System.Text.UTF8Encoding Utf8NoBom = new(false);
 
         // ── Connection ────────────────────────────────────────────────────────
         [ObservableProperty] private string _serverUrl = "http://gitlab.local";
@@ -54,46 +58,111 @@ namespace GitSparseManager.ViewModels
         [ObservableProperty] private ObservableCollection<Repository> _repositories = new();
         [ObservableProperty] private Repository? _selectedRepository;
         [ObservableProperty] private ObservableCollection<Branch> _branches = new();
-        [ObservableProperty] private Branch? _selectedBranch;
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(NewBranchHint))]
+        private Branch? _selectedBranch;
         [ObservableProperty] private string _branchFilterText = string.Empty;
+        [ObservableProperty] private string _repositoryFilterText = string.Empty;
 
         private ICollectionView? _branchesView;
         public ICollectionView? BranchesView => _branchesView;
+
+        private ICollectionView? _repositoriesView;
+        public ICollectionView? RepositoriesView => _repositoriesView;
 
         // ── Tree ──────────────────────────────────────────────────────────────
         [ObservableProperty] private ObservableCollection<TreeNodeViewModel> _treeNodes = new();
         [ObservableProperty] private string _searchFilter = string.Empty;
 
         // ── Output ────────────────────────────────────────────────────────────
-        [ObservableProperty] private string _targetFolder = string.Empty;
         [ObservableProperty] private string _selectedPathsText = string.Empty;
         [ObservableProperty] private string _generatedScript = string.Empty;
 
-        // ── Scan ──────────────────────────────────────────────────────────────
-        [ObservableProperty] private string _scanPath = string.Empty;
+        /// <summary>True when <see cref="GeneratedScript"/> is a real script rather than an explanatory comment.</summary>
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(CopyScriptCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveBatCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveShCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveManageBatCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SaveManageShCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ApplyManageCommand))]
+        private bool _hasValidScript;
+
         [ObservableProperty] private string _newBranchName = string.Empty;
-        [ObservableProperty] private string _treeSourcePath = string.Empty;
+
+        // ── Destination ───────────────────────────────────────────────────────
+        [ObservableProperty] private string _cloneParentFolder = string.Empty;
+        [ObservableProperty] private string _folderName = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ResetFolderNameCommand))]
+        private bool _isFolderNameAuto = true;
+
+        [ObservableProperty] private string _destinationPreview = string.Empty;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _hasDestinationError;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(NewBranchHint))]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _isNewBranchInvalid;
+
+        // True from a keystroke in New Branch until its git validation has answered.
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ExecuteScriptCommand))]
+        private bool _isBranchCheckPending;
+
+        private bool _settingFolderName;
+        private CancellationTokenSource? _branchCheckCts;
+
+        public string NewBranchHint => IsNewBranchInvalid
+            ? "Not a valid branch name"
+            : $"Created locally from {SelectedBranch?.Name ?? "the selected branch"} after checkout. Not pushed.";
+
+        /// <summary>Output of the last Manage apply (git warnings). Cleared when the next apply starts.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasLastApplyLog))]
+        private string _lastApplyLog = string.Empty;
+
+        public bool HasLastApplyLog => !string.IsNullOrWhiteSpace(LastApplyLog);
+
+        /// <summary>Folders the last Manage apply could not delete. Cleared on the next apply or when another checkout opens.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasCleanupLeftovers))]
+        private ObservableCollection<(string Path, string Reason)> _cleanupLeftovers = new();
+
+        public bool HasCleanupLeftovers => CleanupLeftovers.Count > 0;
+
+        [ObservableProperty] private bool _scriptPanelExpanded;
 
         // ── Manage checkout ───────────────────────────────────────────────────
-        [ObservableProperty] private CheckoutInfo? _checkoutInfo;
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
+        private CheckoutInfo? _checkoutInfo;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
         [ObservableProperty] private RecentCheckout? _selectedRecentCheckout;
         [ObservableProperty] private string _pendingChangesText = "No changes";
-        [ObservableProperty] private bool _isApplyEnabled = false;
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(ApplyManageCommand))]
+        private bool _isApplyEnabled = false;
 
         /// <summary>Repository root the Manage actions operate on.</summary>
-        private string ManageRoot => CheckoutInfo?.Root ?? ScanPath;
+        private string ManageRoot => CheckoutInfo?.Root ?? string.Empty;
 
         // ── Script options ────────────────────────────────────────────────────
         [ObservableProperty] private bool _initSubmodules = false;
         [ObservableProperty] private bool _keepWindowOpen = true;
         [ObservableProperty] private ThemeMode _selectedThemeMode = ThemeMode.System;
 
-        public IReadOnlyList<ThemeMode> ThemeModes { get; } = Enum.GetValues<ThemeMode>();
-
         // ── UI state ──────────────────────────────────────────────────────────
-        [ObservableProperty] private bool _isLoading = false;
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RestartToUpdateCommand))]
+        private bool _isLoading = false;
         [ObservableProperty] private bool _isConnected = false;
         [ObservableProperty] private string _statusMessage = "Enter your server URL and Personal Access Token, then click Connect.";
 
@@ -132,7 +201,7 @@ namespace GitSparseManager.ViewModels
                 if (IsCloneMode)
                     return SelectedRepository == null ? string.Empty : RepoKey(SelectedRepository.HttpUrlToRepo);
 
-                if (CheckoutInfo == null) return ScanPath;
+                if (CheckoutInfo == null) return string.Empty;
 
                 return string.IsNullOrWhiteSpace(CheckoutInfo.RemoteUrl)
                     ? CheckoutInfo.Root
@@ -160,26 +229,34 @@ namespace GitSparseManager.ViewModels
             ISettingsService settingsService,
             ClipboardService clipboardService,
             IDialogService dialogService,
-            ITreeCacheService treeCacheService,
-            ILocalScanService localScanService,
             IPresetService presetService,
             IGitService gitService,
             IRemoteTreeService remoteTreeService,
-            ICheckoutService checkoutService)
+            ICheckoutService checkoutService,
+            ISubmoduleService submoduleService,
+            IUpdateService updateService)
         {
+            _updateService = updateService;
             _hostServiceFactory = hostServiceFactory;
             _gitService = gitService;
             _remoteTreeService = remoteTreeService;
             _checkoutService = checkoutService;
+            _submoduleService = submoduleService;
             _commandGenerator = commandGenerator;
             _settingsService = settingsService;
             _clipboardService = clipboardService;
             _dialogService = dialogService;
-            _treeCacheService = treeCacheService;
-            _localScanService = localScanService;
             _presetService = presetService;
 
+            _regenerateTimer.Tick += (_, _) =>
+            {
+                _regenerateTimer.Stop();
+                RegenerateScript();
+            };
+
             _appSettings = settingsService.LoadSettings();
+            _scriptPanelExpanded = _appSettings.ScriptPanelExpanded;
+            _cloneParentFolder = _appSettings.CloneParentFolder ?? string.Empty;
             InitSubmodules = _appSettings.InitSubmodules;
             KeepWindowOpen = _appSettings.KeepWindowOpen;
             SelectedThemeMode = _appSettings.ThemeMode;
@@ -195,17 +272,16 @@ namespace GitSparseManager.ViewModels
             _branchesView = CollectionViewSource.GetDefaultView(Branches);
             _branchesView.Filter = FilterBranch;
 
+            _repositoriesView = CollectionViewSource.GetDefaultView(Repositories);
+            _repositoriesView.Filter = FilterRepository;
+
             RecentCheckouts = new ObservableCollection<RecentCheckout>(_appSettings.RecentCheckouts);
             RefreshRecentCheckoutState();
 
-            // Ticking a large folder changes thousands of nodes; collapse that into one recompute.
-            _pendingChangesTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-            _pendingChangesTimer.Tick += (_, _) =>
-            {
-                _pendingChangesTimer.Stop();
-                RecomputePendingChanges();
-            };
-            TreeNodeViewModel.CheckedChanged += SchedulePendingChangesRecompute;
+            // Ticking a large folder changes thousands of nodes; collapse that into one regeneration.
+            TreeNodeViewModel.CheckedChanged += ScheduleRegenerate;
+            UpdateDestination();
+            RegenerateScript();
         }
 
         private static string DefaultServerUrl(GitHostType hostType) =>
@@ -241,8 +317,9 @@ namespace GitSparseManager.ViewModels
                 Repositories.Clear();
                 Branches.Clear();
                 TreeNodes.Clear();
+                _allRootNodes.Clear();
                 SelectedPathsText = string.Empty;
-                GeneratedScript = string.Empty;
+                ScheduleRegenerate();
                 StatusMessage = $"Enter your {newValue} server URL and Personal Access Token, then click Connect.";
             }
             finally
@@ -264,12 +341,191 @@ namespace GitSparseManager.ViewModels
         {
             _appSettings.InitSubmodules = value;
             _settingsService.SaveSettings(_appSettings);
+            ScheduleRegenerate();
         }
 
         partial void OnKeepWindowOpenChanged(bool value)
         {
             _appSettings.KeepWindowOpen = value;
             _settingsService.SaveSettings(_appSettings);
+            ScheduleRegenerate();
+        }
+
+        partial void OnScriptPanelExpandedChanged(bool value)
+        {
+            _appSettings.ScriptPanelExpanded = value;
+            _settingsService.SaveSettings(_appSettings);
+        }
+
+        partial void OnNewBranchNameChanged(string value)
+        {
+            UpdateDestination();
+            ScheduleRegenerate();
+            _ = ValidateNewBranchAsync(value);
+        }
+
+        partial void OnCloneParentFolderChanged(string value)
+        {
+            _appSettings.CloneParentFolder = value ?? string.Empty;
+            _settingsService.SaveSettings(_appSettings);
+            UpdateDestination();
+        }
+
+        partial void OnFolderNameChanged(string value)
+        {
+            if (!_settingFolderName) IsFolderNameAuto = false;
+            UpdateDestination();
+            ScheduleRegenerate();
+        }
+
+        // ── Destination ───────────────────────────────────────────────────────
+
+        internal static string BuildFolderName(string pattern, string? repo, string? newBranch, string? baseBranch)
+        {
+            if (string.IsNullOrWhiteSpace(pattern)) pattern = AppSettings.DefaultFolderNamePattern;
+            var branch = string.IsNullOrWhiteSpace(newBranch) ? baseBranch : newBranch;
+
+            var name = pattern
+                .Replace("{repo}", repo ?? string.Empty)
+                .Replace("{branch}", branch ?? string.Empty)
+                .Replace("{base}", baseBranch ?? string.Empty);
+
+            foreach (var c in new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' })
+                name = name.Replace(c, '-');
+
+            return Regex.Replace(name, "-{2,}", "-").TrimEnd('.', ' ');
+        }
+
+        private static bool IsValidFolderName(string name) =>
+            !string.IsNullOrWhiteSpace(name) &&
+            name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+            name != "." && name != ".." &&
+            !name.EndsWith('.') && !name.EndsWith(' ');
+
+        /// <summary>The settings window changed the pattern; apply it to the automatic name.</summary>
+        private void ApplyFolderNamePattern(string pattern)
+        {
+            _appSettings.FolderNamePattern = pattern;
+            _settingsService.SaveSettings(_appSettings);
+            UpdateDestination();
+        }
+
+        /// <summary>Regenerates the automatic folder name, then refreshes the path preview and its error state.</summary>
+        private void UpdateDestination()
+        {
+            if (IsFolderNameAuto)
+            {
+                var name = SelectedRepository == null
+                    ? string.Empty
+                    : BuildFolderName(_appSettings.FolderNamePattern, SelectedRepository.Name,
+                        NewBranchName.Trim(), SelectedBranch?.Name);
+
+                if (name != FolderName)
+                {
+                    _settingFolderName = true;
+                    try { FolderName = name; }
+                    finally { _settingFolderName = false; }
+                }
+            }
+
+            string? error = null;
+            var path = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(CloneParentFolder))
+                error = "Choose where to clone";
+            else if (!IsValidFolderName(FolderName))
+                error = "Folder name is invalid";
+            else if (CloneParentFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+                error = "Clone location is invalid";
+            else
+            {
+                path = Path.Combine(CloneParentFolder, FolderName);
+                try
+                {
+                    if (File.Exists(path) ||
+                        (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()))
+                        error = "Folder already exists and isn't empty";
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    error = "Folder already exists and isn't empty";
+                }
+            }
+
+            HasDestinationError = error != null;
+            DestinationPreview = error == null
+                ? "→ " + path
+                : path.Length == 0 ? error : $"→ {path} — {error}";
+        }
+
+        [RelayCommand]
+        private void BrowseCloneParent()
+        {
+            var initial = Directory.Exists(CloneParentFolder) ? CloneParentFolder : null;
+            var folder = _dialogService.ShowOpenFolderDialog("Select folder to clone into", initial);
+            if (folder != null) CloneParentFolder = folder;
+        }
+
+        [RelayCommand(CanExecute = nameof(CanResetFolderName))]
+        private void ResetFolderName()
+        {
+            IsFolderNameAuto = true;
+            UpdateDestination();
+            ScheduleRegenerate();
+        }
+
+        private bool CanResetFolderName() => !IsFolderNameAuto;
+
+        // ── New branch validation ─────────────────────────────────────────────
+
+        private async Task ValidateNewBranchAsync(string name)
+        {
+            _branchCheckCts?.Cancel();
+            _branchCheckCts?.Dispose();
+
+            name = name.Trim();
+            if (name.Length == 0)
+            {
+                _branchCheckCts = null;
+                IsNewBranchInvalid = false;
+                IsBranchCheckPending = false;
+                return;
+            }
+
+            var cts = new CancellationTokenSource();
+            _branchCheckCts = cts;
+            IsBranchCheckPending = true;
+
+            try
+            {
+                await Task.Delay(300, cts.Token);
+
+                // A leading dash would be read as a git option.
+                var invalid = name.StartsWith('-');
+                if (!invalid)
+                {
+                    var result = await _gitService.RunAsync(
+                        new[] { "check-ref-format", "--branch", name }, ct: cts.Token);
+                    invalid = result.ExitCode != 0;
+                }
+
+                cts.Token.ThrowIfCancellationRequested();
+                IsNewBranchInvalid = invalid;
+                IsBranchCheckPending = false;
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer keystroke replaced this check.
+            }
+            catch (Exception)
+            {
+                // git could not be run; don't block the user on a check that couldn't happen.
+                if (ReferenceEquals(_branchCheckCts, cts))
+                {
+                    IsNewBranchInvalid = false;
+                    IsBranchCheckPending = false;
+                }
+            }
         }
 
         partial void OnSelectedThemeModeChanged(ThemeMode value)
@@ -308,6 +564,8 @@ namespace GitSparseManager.ViewModels
                 StatusMessage = "Select a repository and branch. The tree loads automatically.";
                 _ = LoadRemoteTreeAsync();
             }
+
+            RegenerateScript();
         }
 
         partial void OnSearchFilterChanged(string value) => ApplyFilter(value);
@@ -326,12 +584,29 @@ namespace GitSparseManager.ViewModels
 
             if (value != null && IsCloneMode)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
+
+            UpdateDestination();
+            ScheduleRegenerate();
+        }
+
+        partial void OnRepositoryFilterTextChanged(string value)
+        {
+            _repositoriesView?.Refresh();
+            if (string.IsNullOrWhiteSpace(value) && SelectedRepository != null)
+                SelectedRepository = null;
         }
 
         partial void OnSelectedRepositoryChanged(Repository? value)
         {
+            if (RepositoryFilterText != (value?.PathWithNamespace ?? string.Empty))
+                RepositoryFilterText = value?.PathWithNamespace ?? string.Empty;
+
             if (value != null)
                 _ = LoadBranchesAsync();
+
+            IsFolderNameAuto = true;
+            UpdateDestination();
+            ScheduleRegenerate();
         }
 
         // ── Commands ──────────────────────────────────────────────────────────
@@ -382,6 +657,10 @@ namespace GitSparseManager.ViewModels
             obj is Branch b && (string.IsNullOrEmpty(BranchFilterText) ||
             b.Name.Contains(BranchFilterText, StringComparison.OrdinalIgnoreCase));
 
+        private bool FilterRepository(object obj) =>
+            obj is Repository r && (string.IsNullOrEmpty(RepositoryFilterText) ||
+            r.PathWithNamespace.Contains(RepositoryFilterText, StringComparison.OrdinalIgnoreCase));
+
         private async Task LoadBranchesAsync()
         {
             if (SelectedRepository == null) return;
@@ -394,7 +673,7 @@ namespace GitSparseManager.ViewModels
             // Drop the previous repository's nodes so its selection cannot leak into the new tree
             _allRootNodes.Clear();
             SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
+            ScheduleRegenerate();
 
             try
             {
@@ -423,13 +702,12 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        private async Task ApplyFlatNodesAsync(List<TreeNode> flatNodes, string? scanRoot = null)
+        private async Task ApplyFlatNodesAsync(List<TreeNode> flatNodes)
         {
             var roots = await Task.Run(() => BuildTree(flatNodes));
             _allRootNodes = roots;
-            if (scanRoot != null)
-                SetupLazyLoaders(roots, scanRoot);
             TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
+            ScheduleRegenerate();
         }
 
         // ── Remote tree (Clone mode) ──────────────────────────────────────────
@@ -466,7 +744,7 @@ namespace GitSparseManager.ViewModels
                 cts.Token.ThrowIfCancellationRequested();
 
                 // The whole tree is in memory, so no lazy loading is needed.
-                await ApplyFlatNodesAsync(result.Nodes, scanRoot: null);
+                await ApplyFlatNodesAsync(result.Nodes);
 
                 // Keep whatever selection still exists on the new branch.
                 if (previous.Count > 0)
@@ -499,18 +777,79 @@ namespace GitSparseManager.ViewModels
         }
 
         [RelayCommand]
-        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
+        private void OpenSettings() =>
+            _dialogService.ShowSettings(
+                new SettingsViewModel(SelectedThemeMode, _appSettings.FolderNamePattern, _remoteTreeService,
+                    mode => SelectedThemeMode = mode, ApplyFolderNamePattern, CheckForUpdatesManualAsync));
 
-        [RelayCommand]
-        private void ClearTreeCache()
+        // ── Auto-update ───────────────────────────────────────────────────────
+        [ObservableProperty] private bool _isUpdateBarVisible;
+        [ObservableProperty] private string _updateMessage = string.Empty;
+        private bool _updateCheckRunning;
+
+        /// <summary>Silent startup check: errors surface in the status bar at most once, never block.</summary>
+        public async Task CheckForUpdatesOnStartupAsync()
         {
-            var freed = _remoteTreeService.GetCacheSizeBytes();
-            _remoteTreeService.ClearCache();
-            var remaining = _remoteTreeService.GetCacheSizeBytes();
-            StatusMessage = $"Tree cache cleared — {FormatSize(Math.Max(0, freed - remaining))} freed.";
+            try
+            {
+                if (!_updateService.IsInstalled) return;
+                await RunUpdateCheckAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Update check failed: {ex.Message}";
+            }
         }
 
-        private static string FormatSize(long bytes)
+        private async Task<string> CheckForUpdatesManualAsync()
+        {
+            if (!_updateService.IsInstalled)
+                return "Updates are only available in the installed version.";
+
+            try
+            {
+                var version = await RunUpdateCheckAsync();
+                return version == null ? "You're up to date." : $"Version {version} is ready. Restart to update.";
+            }
+            catch (Exception ex)
+            {
+                return $"Update check failed: {ex.Message}";
+            }
+        }
+
+        private async Task<string?> RunUpdateCheckAsync()
+        {
+            if (_updateCheckRunning) return null;
+            _updateCheckRunning = true;
+            try
+            {
+                var version = await Task.Run(() => _updateService.CheckAndDownloadAsync());
+                if (version != null)
+                {
+                    UpdateMessage = $"Version {version} is ready — Restart to update";
+                    IsUpdateBarVisible = true;
+                }
+                return version;
+            }
+            finally
+            {
+                _updateCheckRunning = false;
+            }
+        }
+
+        // Restart is held back while an operation runs, so an update never interrupts one.
+        [RelayCommand(CanExecute = nameof(CanRestartToUpdate))]
+        private void RestartToUpdate() => _updateService.ApplyUpdatesAndRestart();
+
+        private bool CanRestartToUpdate() => !IsLoading;
+
+        [RelayCommand]
+        private void DismissUpdate() => IsUpdateBarVisible = false;
+
+        [RelayCommand]
+        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
+
+        internal static string FormatSize(long bytes)
         {
             string[] units = { "B", "KB", "MB", "GB" };
             double size = bytes;
@@ -523,70 +862,90 @@ namespace GitSparseManager.ViewModels
             return $"{size:0.#} {units[unit]}";
         }
 
-        [RelayCommand]
-        private void GenerateScript()
+        // ── Live script ───────────────────────────────────────────────────────
+
+        private void ScheduleRegenerate()
         {
-            var paths = DropFilePaths(GetSelectedPaths(), out var droppedFiles);
-            if (paths.Count == 0)
+            _regenerateTimer.Stop();
+            _regenerateTimer.Start();
+        }
+
+        /// <summary>Rebuilds the script for the active mode right away and cancels any pending rebuild.</summary>
+        private void RegenerateScript()
+        {
+            _regenerateTimer.Stop();
+            if (IsManageMode) RecomputePendingChanges();
+            else RegenerateCloneScript();
+        }
+
+        private void RegenerateCloneScript()
+        {
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
+            SelectedPathsText = string.Join(Environment.NewLine, paths);
+
+            string? problem = null;
+            if (SelectedRepository == null) problem = "Select a repository";
+            else if (string.IsNullOrWhiteSpace(SelectedBranch?.Name)) problem = "Select a branch";
+            else if (paths.Count == 0) problem = "Select at least one folder";
+
+            if (problem != null)
             {
-                StatusMessage = "No paths selected. Check items in the tree first.";
+                SetScript("rem " + problem, valid: false);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(SelectedBranch?.Name))
-            {
-                StatusMessage = "A branch must be selected before generating the script.";
-                return;
-            }
-
-            GeneratedScript = _commandGenerator.GenerateBatScript(
-                SelectedRepository?.HttpUrlToRepo ?? string.Empty,
-                SelectedBranch?.Name ?? string.Empty,
+            SetScript(_commandGenerator.GenerateBatScript(
+                SelectedRepository!.HttpUrlToRepo,
+                SelectedBranch!.Name,
                 paths,
-                TargetFolder,
+                FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
-                KeepWindowOpen);
-
-            SelectedPathsText = string.Join(Environment.NewLine, paths);
-            StatusMessage = $"Script generated for {paths.Count} path(s).{DroppedFilePathsNote(droppedFiles)}";
+                KeepWindowOpen), valid: true);
         }
 
-        [RelayCommand]
+        private void RegenerateManageScript(List<string> paths)
+        {
+            var root = ManageRoot;
+            if (string.IsNullOrWhiteSpace(root))
+                SetScript("rem Open a checkout first", valid: false);
+            else if (!Directory.Exists(Path.Combine(root, ".git")))
+                SetScript("rem The selected path is not a Git repository (no .git folder found)", valid: false);
+            else
+                SetScript(_commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removedPaths),
+                    valid: true);
+        }
+
+        private void SetScript(string script, bool valid)
+        {
+            GeneratedScript = script;
+            HasValidScript = valid;
+        }
+
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void CopyScript()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateScript();
-
-            if (!string.IsNullOrEmpty(GeneratedScript))
-            {
-                _clipboardService.CopyText(GeneratedScript);
-                StatusMessage = "Script copied to clipboard.";
-            }
+            _clipboardService.CopyText(GeneratedScript);
+            StatusMessage = "Script copied to clipboard.";
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveBat()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateScript();
-
-            if (string.IsNullOrEmpty(GeneratedScript)) return;
-
             var path = _dialogService.ShowSaveFileDialog(
                 "Batch files (*.bat)|*.bat|All files (*.*)|*.*", ".bat", "sparse-checkout");
 
             if (path != null)
             {
-                File.WriteAllText(path, GeneratedScript);
+                File.WriteAllText(path, GeneratedScript, Utf8NoBom);
                 StatusMessage = $"Script saved to {path}";
             }
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveSh()
         {
-            var paths = GetSelectedPaths();
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
             if (paths.Count == 0)
             {
                 StatusMessage = "No paths selected.";
@@ -603,7 +962,7 @@ namespace GitSparseManager.ViewModels
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                TargetFolder,
+                FolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen);
@@ -618,10 +977,13 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        private bool CanExecuteScript() =>
+            HasValidScript && !HasDestinationError && !IsNewBranchInvalid && !IsBranchCheckPending;
+
+        [RelayCommand(CanExecute = nameof(CanExecuteScript))]
         private async Task ExecuteScriptAsync()
         {
-            var paths = GetSelectedPaths();
+            var paths = DropFilePaths(GetSelectedPaths(), out _);
             if (paths.Count == 0)
             {
                 StatusMessage = "No paths selected. Check items in the tree first.";
@@ -634,37 +996,22 @@ namespace GitSparseManager.ViewModels
                 return;
             }
 
-            var dialogTitle = string.IsNullOrWhiteSpace(TargetFolder)
-                ? "Select folder to clone into"
-                : $"Select parent folder for '{TargetFolder}'";
-            var picked = _dialogService.ShowOpenFolderDialog(dialogTitle);
-            if (picked == null) return;
-
-            string effectiveTargetFolder;
-            string? workingDirectory;
-            if (string.IsNullOrWhiteSpace(TargetFolder))
-            {
-                effectiveTargetFolder = ".";
-                workingDirectory = picked;
-            }
-            else
-            {
-                effectiveTargetFolder = Path.Combine(picked, TargetFolder);
-                workingDirectory = null;
-            }
+            var targetPath = Path.Combine(CloneParentFolder, FolderName);
+            var newBranch = string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName;
 
             var scriptToRun = _commandGenerator.GenerateBatScript(
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                effectiveTargetFolder,
-                string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
+                targetPath,
+                newBranch,
                 InitSubmodules,
-                KeepWindowOpen,
-                workingDirectory);
+                KeepWindowOpen);
 
-            if (!_dialogService.ShowConfirmation(
-                "This will execute Git commands locally. Continue?", "Execute Script"))
+            var message = $"Clone {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
+            if (newBranch != null) message += $"\nand create branch {newBranch}";
+
+            if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))
                 return;
 
             IsLoading = true;
@@ -673,7 +1020,7 @@ namespace GitSparseManager.ViewModels
             var tempFile = Path.Combine(Path.GetTempPath(), $"sparse_{Guid.NewGuid():N}.bat");
             try
             {
-                File.WriteAllText(tempFile, scriptToRun);
+                File.WriteAllText(tempFile, scriptToRun, Utf8NoBom);
 
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
@@ -687,24 +1034,26 @@ namespace GitSparseManager.ViewModels
                 if (process != null)
                 {
                     await process.WaitForExitAsync();
+                    var exitCode = process.ExitCode;
                     // 0xC000013A (-1073741510) = window closed by user
-                    StatusMessage = process.ExitCode is 0
-                        ? "Script finished successfully."
-                        : process.ExitCode is -1073741510
-                            ? "Script window was closed by the user."
-                            : $"Script finished with exit code {process.ExitCode}.";
-
-                    if (process.ExitCode == 0)
+                    StatusMessage = exitCode switch
                     {
-                        var createdFolder = string.IsNullOrWhiteSpace(TargetFolder)
-                            ? picked
-                            : Path.Combine(picked, TargetFolder);
+                        0 => "Checkout created.",
+                        1 => "Script failed, see the console window.",
+                        2 => "Checkout created, but some submodules failed to initialize.",
+                        -1073741510 => "Script window was closed by the user.",
+                        _ => $"Script finished with exit code {exitCode}."
+                    };
 
-                        if (Directory.Exists(Path.Combine(createdFolder, ".git")))
+                    if (exitCode is 0 or 2)
+                    {
+                        if (Directory.Exists(Path.Combine(targetPath, ".git")))
                             AddOrUpdateRecentCheckout(
-                                createdFolder,
+                                targetPath,
                                 SelectedRepository?.HttpUrlToRepo,
-                                string.IsNullOrWhiteSpace(NewBranchName) ? SelectedBranch?.Name : NewBranchName);
+                                newBranch ?? SelectedBranch?.Name);
+
+                        UpdateDestination();
                     }
                 }
             }
@@ -741,8 +1090,47 @@ namespace GitSparseManager.ViewModels
             await OpenCheckoutAsync(root);
         }
 
+        [RelayCommand(CanExecute = nameof(HasCheckout))]
+        private async Task ShowSubmodulesAsync()
+        {
+            var root = CheckoutInfo?.Root;
+            if (string.IsNullOrWhiteSpace(root)) return;
+
+            var vm = new SubmodulesViewModel(
+                _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService);
+            _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
+            _dialogService.ShowSubmodules(vm);
+
+            // A full reload would rebuild the tree and drop the user's ticks, so only re-read the summary,
+            // and only when an initialize run could have changed something.
+            if (vm.HasInitialized)
+                await RefreshCheckoutSummaryAsync(root);
+        }
+
+        /// <summary>Re-reads the checkout state for the summary line (local-change count) without touching the tree, ticks or baseline.</summary>
+        private async Task RefreshCheckoutSummaryAsync(string root)
+        {
+            try
+            {
+                CheckoutInfo = await _checkoutService.OpenAsync(root);
+                UpdateCheckoutSummary();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Could not refresh the checkout summary: {ex.Message}";
+            }
+        }
+
+        private bool HasCheckout => CheckoutInfo != null;
+
         public async Task OpenCheckoutAsync(string path)
         {
+            // Reopening the same checkout (reload, retry, post-apply refresh) keeps the leftovers.
+            if (!string.Equals(Path.TrimEndingDirectorySeparator(path),
+                    Path.TrimEndingDirectorySeparator(CheckoutInfo?.Root ?? string.Empty),
+                    StringComparison.OrdinalIgnoreCase))
+                CleanupLeftovers = new();
+
             _activeCheckoutPath = path;
             IsLoading = true;
             StatusMessage = "Opening checkout…";
@@ -751,7 +1139,7 @@ namespace GitSparseManager.ViewModels
             {
                 var info = await _checkoutService.OpenAsync(path);
                 var nodes = await _checkoutService.GetTreeAsync(info.Root);
-                await ApplyFlatNodesAsync(nodes, scanRoot: null);
+                await ApplyFlatNodesAsync(nodes);
 
                 CheckoutInfo = info;
                 _checkoutSummarySuffix = string.Empty;
@@ -759,11 +1147,11 @@ namespace GitSparseManager.ViewModels
                 if (!info.IsSparse)
                 {
                     // Everything is on disk today, so the current state is "all root folders".
-                    foreach (var root in _allRootNodes.Where(n => n.IsFolder && !n.IsPlaceholder))
+                    foreach (var root in _allRootNodes.Where(n => n.IsFolder))
                         root.IsChecked = true;
 
                     _baselinePaths = _allRootNodes
-                        .Where(n => n.IsFolder && !n.IsPlaceholder)
+                        .Where(n => n.IsFolder)
                         .Select(n => n.FullPath)
                         .ToList();
 
@@ -784,9 +1172,6 @@ namespace GitSparseManager.ViewModels
                         _checkoutSummarySuffix =
                             $" · {skippedFiles} file path(s) in the sparse list are ignored; only folders can be selected.";
                 }
-
-                _currentSparseCheckoutPaths = new List<string>(_baselinePaths);
-                ScanPath = info.Root;
 
                 RecomputePendingChanges();
                 LoadPresetsForCurrentScan();
@@ -834,13 +1219,6 @@ namespace GitSparseManager.ViewModels
 
         // ── Manage: pending changes ───────────────────────────────────────────
 
-        private void SchedulePendingChangesRecompute()
-        {
-            if (!IsManageMode) return;
-            _pendingChangesTimer.Stop();
-            _pendingChangesTimer.Start();
-        }
-
         private void RecomputePendingChanges()
         {
             var selected = GetSelectedPaths();
@@ -855,6 +1233,9 @@ namespace GitSparseManager.ViewModels
             PendingChangesText = lines.Count == 0 ? "No changes" : string.Join(Environment.NewLine, lines);
             UpdateApplyEnabled();
             UpdateCheckoutSummary();
+
+            SelectedPathsText = string.Join(Environment.NewLine, selected);
+            RegenerateManageScript(selected);
         }
 
         /// <summary>
@@ -988,46 +1369,19 @@ namespace GitSparseManager.ViewModels
 
         // ── Manage mode ───────────────────────────────────────────────────────
 
-        [RelayCommand]
-        private void GenerateManageScript()
-        {
-            var root = ManageRoot;
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                StatusMessage = "Please open a checkout first.";
-                return;
-            }
-
-            if (!Directory.Exists(Path.Combine(root, ".git")))
-            {
-                StatusMessage = "The selected path does not appear to be a Git repository (no .git folder found).";
-                return;
-            }
-
-            RecomputePendingChanges();
-            var paths = GetSelectedPaths();
-            GeneratedScript = _commandGenerator.GenerateManageBatScript(root, paths, KeepWindowOpen, _removedPaths);
-            SelectedPathsText = string.Join(Environment.NewLine, paths);
-            StatusMessage = $"Manage script generated. {paths.Count} path(s) will be active.";
-        }
-
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveManageBat()
         {
-            if (string.IsNullOrEmpty(GeneratedScript))
-                GenerateManageScript();
-            if (string.IsNullOrEmpty(GeneratedScript)) return;
-
             var path = _dialogService.ShowSaveFileDialog(
                 "Batch files (*.bat)|*.bat|All files (*.*)|*.*", ".bat", "manage-sparse-checkout");
             if (path != null)
             {
-                File.WriteAllText(path, GeneratedScript);
+                File.WriteAllText(path, GeneratedScript, Utf8NoBom);
                 StatusMessage = $"Script saved to {path}";
             }
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(HasValidScript))]
         private void SaveManageSh()
         {
             var root = ManageRoot;
@@ -1049,7 +1403,9 @@ namespace GitSparseManager.ViewModels
             }
         }
 
-        [RelayCommand]
+        private bool CanApplyManage => IsApplyEnabled && HasValidScript;
+
+        [RelayCommand(CanExecute = nameof(CanApplyManage))]
         private async Task ApplyManageAsync()
         {
             var info = CheckoutInfo;
@@ -1131,6 +1487,9 @@ namespace GitSparseManager.ViewModels
             string root, CheckoutInfo info, List<string> selected, List<string> added, List<string> removed,
             RemovalReviewModel? review, RemovalReviewChoices choices)
         {
+            LastApplyLog = string.Empty;
+            CleanupLeftovers = new();
+
             // a. Changed files must go back to HEAD before git will let the folder leave the worktree.
             if (review != null && choices.DeleteChanged && review.ChangedFiles.Count > 0)
             {
@@ -1197,8 +1556,9 @@ namespace GitSparseManager.ViewModels
             // Re-read everything from git so the report describes reality, not intent.
             StatusMessage = "Verifying…";
             await OpenCheckoutAsync(root);
+            CleanupLeftovers = new ObservableCollection<(string Path, string Reason)>(failures);
 
-            var failedPaths = failures.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var failedPaths =failures.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var keptPartly = removed
                 .Where(p => Directory.Exists(ToFullPath(root, p)) && !failedPaths.Contains(p))
                 .ToList();
@@ -1218,13 +1578,49 @@ namespace GitSparseManager.ViewModels
             {
                 parts.Add("(see warnings)");
 
-                var block = "# git warnings" + Environment.NewLine + string.Join(Environment.NewLine, warnings);
-                GeneratedScript = string.IsNullOrWhiteSpace(GeneratedScript)
-                    ? block
-                    : GeneratedScript + Environment.NewLine + Environment.NewLine + block;
+                LastApplyLog = string.Join(Environment.NewLine, warnings);
             }
 
             StatusMessage = string.Join(" ", parts);
+        }
+
+        [RelayCommand]
+        private async Task RetryCleanupAsync()
+        {
+            var root = CheckoutInfo?.Root;
+            if (string.IsNullOrWhiteSpace(root) || CleanupLeftovers.Count == 0) return;
+
+            var leftovers = CleanupLeftovers.ToList();
+            var remaining = new List<(string Path, string Reason)>();
+
+            IsLoading = true;
+            try
+            {
+                StatusMessage = "Retrying cleanup…";
+                foreach (var (path, reason) in leftovers)
+                {
+                    var full = ToFullPath(root, path);
+                    if (!Directory.Exists(full)) continue;
+                    if (!TryForceDeleteDirectory(full, out var newReason))
+                        remaining.Add((path, newReason));
+                }
+
+                await OpenCheckoutAsync(root);
+                CleanupLeftovers = new ObservableCollection<(string Path, string Reason)>(remaining);
+
+                var message = $"Cleaned up {leftovers.Count - remaining.Count} of {leftovers.Count}.";
+                if (remaining.Count > 0)
+                    message += $" Could not delete: {string.Join(", ", remaining.Select(f => $"{f.Path} ({f.Reason})"))}.";
+                StatusMessage = message;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         // ── Manage: removal review ────────────────────────────────────────────
@@ -1420,234 +1816,6 @@ namespace GitSparseManager.ViewModels
             return lines.Count == 0 ? "The git command failed." : string.Join(" ", lines);
         }
 
-        // ── Local scan ────────────────────────────────────────────────────────
-
-        [RelayCommand]
-        private void BrowseScanPath()
-        {
-            var folder = _dialogService.ShowOpenFolderDialog("Select folder to scan");
-            if (folder != null)
-                ScanPath = folder;
-        }
-
-        [RelayCommand]
-        private void BrowseTreeSourcePath()
-        {
-            var folder = _dialogService.ShowOpenFolderDialog("Select full clone to use as tree source");
-            if (folder != null)
-                TreeSourcePath = folder;
-        }
-
-        [RelayCommand]
-        private void PickTreeSourceProfile()
-        {
-            var filePath = _dialogService.ShowOpenFileDialog(
-                "JSON files (*.json)|*.json|All files (*.*)|*.*", "Select Tree Source Profile");
-            if (filePath != null)
-                TreeSourcePath = filePath;
-        }
-
-        private async Task ScanFromTreeSourceProfileAsync(string profilePath)
-        {
-            IsLoading = true;
-            StatusMessage = "Loading tree source from profile…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var cache = await Task.Run(() => _treeCacheService.LoadLocalCache(profilePath));
-                if (cache == null)
-                {
-                    StatusMessage = "Could not read the profile file. Make sure it is a valid scan cache JSON.";
-                    return;
-                }
-
-                var scanRoot = Directory.Exists(cache.ScanPath) ? cache.ScanPath : null;
-                var roots = await Task.Run(() => BuildTree(cache.Nodes));
-                _allRootNodes = roots;
-                if (scanRoot != null)
-                    SetupLazyLoaders(roots, scanRoot);
-                TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-
-                var lazyNote = scanRoot != null ? "" : " (lazy loading unavailable — source folder not found on disk)";
-                var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                if (sparsePaths != null && sparsePaths.Count > 0)
-                {
-                    var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                    StatusMessage = $"Tree source loaded from profile: {cache.Nodes.Count} items.{lazyNote} {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                }
-                else
-                {
-                    StatusMessage = $"Tree source loaded from profile: {cache.Nodes.Count} items.{lazyNote} No sparse-checkout data found.";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error loading tree source: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task ScanAsync()
-        {
-            // A .json TreeSourcePath means load from profile rather than scan a folder
-            if (IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                && Path.GetExtension(TreeSourcePath).Equals(".json", StringComparison.OrdinalIgnoreCase)
-                && File.Exists(TreeSourcePath))
-            {
-                await ScanFromTreeSourceProfileAsync(TreeSourcePath);
-                return;
-            }
-
-            // In Manage mode, TreeSourcePath (full clone) takes priority for the tree scan
-            var pathToScan = IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                ? TreeSourcePath
-                : ScanPath;
-
-            if (string.IsNullOrWhiteSpace(pathToScan) || !Directory.Exists(pathToScan))
-            {
-                StatusMessage = IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath)
-                    ? "Please enter a valid Tree Source path."
-                    : "Please enter a valid folder path to scan.";
-                return;
-            }
-
-            IsLoading = true;
-            StatusMessage = "Scanning folder…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var flatNodes = await _localScanService.ScanAsync(pathToScan);
-                _treeCacheService.SaveLocalCache(pathToScan, flatNodes);
-                await ApplyFlatNodesAsync(flatNodes, pathToScan);
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-
-                if (IsManageMode)
-                {
-                    var usingTreeSource = !string.IsNullOrWhiteSpace(TreeSourcePath);
-                    var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                    var sourceNote = usingTreeSource ? " from tree source" : string.Empty;
-                    if (sparsePaths != null && sparsePaths.Count > 0)
-                    {
-                        var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                        StatusMessage = $"Scan complete: {flatNodes.Count} items{sourceNote}. {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                    }
-                    else
-                    {
-                        StatusMessage = $"Scan complete: {flatNodes.Count} items{sourceNote}. No sparse-checkout data found.";
-                    }
-                }
-                else
-                {
-                    StatusMessage = $"Scan complete: {flatNodes.Count} items. Cache saved to scan folder.";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Scan error: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task LoadProfileAsync()
-        {
-            var filePath = _dialogService.ShowOpenFileDialog(
-                "JSON files (*.json)|*.json|All files (*.*)|*.*", "Load Scan Profile");
-            if (filePath == null) return;
-
-            // In Manage mode with Tree Source set: extract ScanPath from the profile, then let ScanAsync
-            // build the full tree from Tree Source and probe the new ScanPath for checkout state
-            if (IsManageMode && !string.IsNullOrWhiteSpace(TreeSourcePath))
-            {
-                IsLoading = true;
-                StatusMessage = "Reading profile path…";
-                try
-                {
-                    var peek = await Task.Run(() => _treeCacheService.LoadLocalCache(filePath));
-                    if (peek != null && !string.IsNullOrEmpty(peek.ScanPath))
-                        ScanPath = peek.ScanPath;
-                }
-                finally
-                {
-                    IsLoading = false;
-                }
-                await ScanAsync();
-                return;
-            }
-
-            IsLoading = true;
-            StatusMessage = "Loading profile…";
-            TreeNodes.Clear();
-            _allRootNodes.Clear();
-            SelectedPathsText = string.Empty;
-            GeneratedScript = string.Empty;
-
-            try
-            {
-                var cache = await Task.Run(() => _treeCacheService.LoadLocalCache(filePath));
-                if (cache == null)
-                {
-                    StatusMessage = "Could not read the selected file. Make sure it is a valid scan cache JSON.";
-                    return;
-                }
-
-                var scanRoot = Directory.Exists(cache.ScanPath) ? cache.ScanPath : null;
-                var roots = await Task.Run(() => BuildTree(cache.Nodes));
-                _allRootNodes = roots;
-                if (scanRoot != null)
-                    SetupLazyLoaders(roots, scanRoot);
-                TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
-                if (!string.IsNullOrEmpty(cache.ScanPath))
-                    ScanPath = cache.ScanPath;
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
-                var lazyNote = scanRoot != null ? "" : " (lazy loading unavailable — scan folder not found on disk)";
-                if (IsManageMode && !string.IsNullOrWhiteSpace(ScanPath))
-                {
-                    var sparsePaths = await _gitService.GetSparseCheckoutPathsAsync(ScanPath);
-                    if (sparsePaths != null && sparsePaths.Count > 0)
-                    {
-                        var skippedFiles = ApplySparseCheckoutState(sparsePaths);
-                        StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote} {sparsePaths.Count} path(s) currently checked out.{SkippedFilesNote(skippedFiles)}";
-                    }
-                    else
-                    {
-                        StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote} No sparse-checkout data found.";
-                    }
-                }
-                else
-                {
-                    StatusMessage = $"Profile loaded: {cache.Nodes.Count} items.{lazyNote}";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error loading profile: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
         // ── Presets ───────────────────────────────────────────────────────────────
 
         [RelayCommand(CanExecute = nameof(CanSavePreset))]
@@ -1722,83 +1890,6 @@ namespace GitSparseManager.ViewModels
 
         private bool CanModifyPreset() => SelectedPreset != null;
 
-        // ── Lazy-load helpers ──────────────────────────────────────────────────
-
-        private void SetupLazyLoaders(IEnumerable<TreeNodeViewModel> nodes, string scanRoot)
-        {
-            foreach (var node in nodes)
-            {
-                if (node.IsPlaceholder) continue;
-
-                if (node.IsFolder && node.HasUnscannedChildren)
-                    node.SetLazyLoader(CreateLazyLoader(scanRoot));
-                else
-                    SetupLazyLoaders(node.Children, scanRoot);
-            }
-        }
-
-        private Func<TreeNodeViewModel, Task> CreateLazyLoader(string scanRoot) =>
-            async (node) =>
-            {
-                try
-                {
-                    var subNodes = await _localScanService.ScanSubfolderAsync(scanRoot, node.FullPath);
-
-                    // Remove all loading placeholders
-                    foreach (var ph in node.Children.Where(c => c.IsPlaceholder).ToList())
-                        node.Children.Remove(ph);
-
-                    // Populate with real children (UI thread – after await)
-                    PopulateChildren(subNodes, node);
-
-                    // Recursively wire lazy loaders for any newly-discovered boundary folders
-                    SetupLazyLoaders(node.Children, scanRoot);
-
-                    // Propagate parent's checked state to newly loaded children
-                    node.PropagateCheckedToNewChildren();
-
-                    // Re-apply active search filter so new nodes are correctly shown/hidden
-                    if (!string.IsNullOrEmpty(SearchFilter))
-                        node.ApplyFilter(SearchFilter);
-
-                    node.IsLoaded = true;
-                }
-                catch (Exception ex)
-                {
-                    foreach (var ph in node.Children.Where(c => c.IsPlaceholder).ToList())
-                        node.Children.Remove(ph);
-                    node.Children.Add(TreeNodeViewModel.CreateErrorPlaceholder(ex.Message));
-                    node.IsLoaded = true;
-                }
-                finally
-                {
-                    node.IsLoadingChildren = false;
-                }
-            };
-
-        private static void PopulateChildren(List<TreeNode> subNodes, TreeNodeViewModel parentVm)
-        {
-            // Seed the map with the parent so its immediate children resolve correctly
-            var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal)
-            {
-                [parentVm.FullPath] = parentVm
-            };
-
-            foreach (var node in subNodes.OrderBy(n => n.Path, StringComparer.Ordinal))
-            {
-                var slash = node.Path.LastIndexOf('/');
-                var nodeParent = slash < 0
-                    ? parentVm
-                    : map.TryGetValue(node.Path[..slash], out var found) ? found : parentVm;
-
-                var vm = new TreeNodeViewModel(node, nodeParent);
-                nodeParent.Children.Add(vm);
-                map[node.Path] = vm;
-            }
-
-            SortChildrenForDisplay(parentVm);
-        }
-
         // ── Helpers ───────────────────────────────────────────────────────────
 
         private static List<TreeNodeViewModel> BuildTree(List<TreeNode> flat)
@@ -1862,10 +1953,7 @@ namespace GitSparseManager.ViewModels
             }
 
             foreach (var child in parent.Children)
-            {
-                if (!child.IsPlaceholder)
-                    SortChildrenForDisplay(child);
-            }
+                SortChildrenForDisplay(child);
         }
 
         private static int CompareForExplorerDisplay(TreeNodeViewModel? x, TreeNodeViewModel? y)
@@ -1873,10 +1961,6 @@ namespace GitSparseManager.ViewModels
             if (ReferenceEquals(x, y)) return 0;
             if (x is null) return 1;
             if (y is null) return -1;
-
-            // Keep placeholder rows (loading/error) after real items.
-            if (x.IsPlaceholder != y.IsPlaceholder)
-                return x.IsPlaceholder ? 1 : -1;
 
             // Explorer-style grouping: folders before files.
             if (x.IsFolder != y.IsFolder)
@@ -1943,7 +2027,7 @@ namespace GitSparseManager.ViewModels
         {
             foreach (var node in nodes)
             {
-                if (node.IsPlaceholder || string.IsNullOrEmpty(node.FullPath)) continue;
+                if (string.IsNullOrEmpty(node.FullPath)) continue;
                 map[node.FullPath] = node;
                 BuildFlatPathMap(node.Children, map);
             }
@@ -1952,7 +2036,6 @@ namespace GitSparseManager.ViewModels
         /// <summary>Checks the tree to match a sparse list, returning how many entries were files.</summary>
         private int ApplySparseCheckoutState(List<string> checkedPaths)
         {
-            _currentSparseCheckoutPaths = new List<string>(checkedPaths);
             var pathSet = new HashSet<string>(checkedPaths, StringComparer.Ordinal);
             var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
             BuildFlatPathMap(_allRootNodes, map);

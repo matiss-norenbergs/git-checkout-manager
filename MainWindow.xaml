@@ -65,45 +65,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Flat button style -->
-        <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Padding" Value="16,6"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-
-        <Style x:Key="ColoredActionButtonBase" TargetType="Button" BasedOn="{StaticResource ActionButton}">
-            <Setter Property="Foreground" Value="{x:Static Brushes.White}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="2"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"
-                                              TextElement.Foreground="{x:Static Brushes.White}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="AccentActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
-        </Style>
-
         <Style x:Key="DangerActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
             <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}"/>
@@ -116,6 +77,20 @@
     </Window.Resources>
 
     <DockPanel>
+
+        <!-- ═══ UPDATE BAR ═════════════════════════════════════════════════════ -->
+        <Border DockPanel.Dock="Top" Visibility="{Binding IsUpdateBarVisible, Converter={StaticResource BoolToVis}}"
+                Background="{DynamicResource AccentBrush}" Padding="12,6">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Later" Command="{Binding DismissUpdateCommand}"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="8,0,0,0"
+                        Foreground="{DynamicResource OnAccentBrush}" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Content="Restart" Command="{Binding RestartToUpdateCommand}"
+                        Padding="14,3" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding UpdateMessage}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource OnAccentBrush}"/>
+            </DockPanel>
+        </Border>
 
         <!-- ═══ MODE TABS ══════════════════════════════════════════════════════ -->
         <Border DockPanel.Dock="Top"
@@ -131,13 +106,12 @@
                                  Style="{StaticResource TabRadioButton}"/>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="12,4,8,4">
-                    <TextBlock Text="Theme:" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="SemiBold"/>
-                    <ComboBox Width="120"
-                              ItemsSource="{Binding ThemeModes}"
-                              SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay}"
-                              VerticalAlignment="Center"/>
-                </StackPanel>
+                <Button DockPanel.Dock="Right" Content="&#x2699;"
+                        Command="{Binding OpenSettingsCommand}"
+                        Style="{StaticResource ActionButton}"
+                        FontFamily="Segoe UI Symbol" FontSize="15"
+                        Padding="9,1" Margin="12,3,8,3" VerticalAlignment="Center"
+                        ToolTip="Settings"/>
             </DockPanel>
         </Border>
 
@@ -210,25 +184,19 @@
                     </TextBlock>
                 </StackPanel>
 
-                <Button Grid.Column="9"
+                <Button Grid.Column="9" Content="Connect"
                         Command="{Binding ConnectCommand}"
                         Style="{StaticResource AccentActionButton}"
-                        Margin="0">
-                    <TextBlock Text="Connect" Foreground="White" FontWeight="SemiBold"/>
-                </Button>
+                        Margin="0"/>
             </Grid>
         </Border>
 
-        <!-- ═══ REPO / BRANCH BAR ════════════════════════════════════════════ -->
+        <!-- ═══ SOURCE BAR: REPOSITORY / BRANCH ═══════════════════════════════ -->
         <Border DockPanel.Dock="Top"
             Background="{DynamicResource SubPanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
                 Padding="10,7" IsEnabled="{Binding IsConnected}"
                 Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="260"/>
@@ -237,18 +205,18 @@
                     <ColumnDefinition Width="240"/>
                     <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="160"/>
-                    <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="Repository:" VerticalAlignment="Center"
                            FontWeight="SemiBold" Margin="0,0,6,0"/>
                 <ComboBox Grid.Column="1"
-                          ItemsSource="{Binding Repositories}"
+                          ItemsSource="{Binding RepositoriesView}"
                           SelectedItem="{Binding SelectedRepository}"
                           DisplayMemberPath="PathWithNamespace"
+                          IsEditable="True"
+                          IsTextSearchEnabled="False"
+                          Text="{Binding RepositoryFilterText, UpdateSourceTrigger=PropertyChanged}"
                           VerticalAlignment="Center" Padding="5,3"/>
 
                 <TextBlock Grid.Column="3" Text="Branch:" VerticalAlignment="Center"
@@ -262,32 +230,10 @@
                           Text="{Binding BranchFilterText, UpdateSourceTrigger=PropertyChanged}"
                           VerticalAlignment="Center" Padding="5,3"/>
 
-                <TextBlock Grid.Column="6" Text="New Branch:" VerticalAlignment="Center"
-                           FontWeight="SemiBold" Margin="0,0,6,0"
-                           ToolTip="Optional: create and switch to this branch after sparse checkout"/>
-                <TextBox Grid.Column="7"
-                         Text="{Binding NewBranchName, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalAlignment="Center" Padding="5,4"
-                         ToolTip="Optional: appends 'git checkout -b &lt;name&gt;' to the generated script"/>
-
-                <TextBlock Grid.Column="9" Text="Target Folder:" VerticalAlignment="Center"
-                           FontWeight="SemiBold" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="10"
-                         Text="{Binding TargetFolder, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalAlignment="Center" Padding="5,4"
-                         ToolTip="Local path to clone into (optional – leave blank to use the repo name)"/>
-                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="11"
-                            Orientation="Horizontal" Margin="0,7,0,0">
-                    <CheckBox IsChecked="{Binding InitSubmodules}"
-                              ToolTip="Appends 'git submodule update --init --remote --recursive' to the script. Note: --remote updates each submodule to the latest commit on its upstream tracking branch, not the pinned superproject commit.">
-                        <TextBlock Text="Initialize submodules (update to latest remote)" FontSize="12"/>
-                    </CheckBox>
-                    <CheckBox IsChecked="{Binding KeepWindowOpen}"
-                              Margin="24,0,0,0"
-                              ToolTip="When enabled, the CMD window stays open after the script finishes so you can review output and errors. Disable to close automatically.">
-                        <TextBlock Text="Keep CMD window open after script" FontSize="12"/>
-                    </CheckBox>
-                </StackPanel>
+                <Button Grid.Column="6" Content="Refresh tree"
+                        Command="{Binding RefreshTreeCommand}"
+                        Style="{StaticResource ActionButton}" Margin="0"
+                        ToolTip="Re-fetch the folder structure from the server for the selected branch"/>
             </Grid>
         </Border>
 
@@ -301,6 +247,8 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="8"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="8"/>
@@ -344,123 +292,16 @@
                             Command="{Binding ReloadCheckoutCommand}"
                             Style="{StaticResource ActionButton}" Margin="0"
                             ToolTip="Re-read the current checkout from git"/>
+                    <Button Grid.Column="7" Content="Submodules…"
+                            Command="{Binding ShowSubmodulesCommand}"
+                            Style="{StaticResource ActionButton}" Margin="0"
+                            ToolTip="Show the submodules of this checkout and their state"/>
                 </Grid>
 
                 <TextBlock Text="{Binding CheckoutSummary}" Margin="0,6,0,0"
                            FontSize="11.5" TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource MutedTextBrush}"
                            ToolTip="{Binding CheckoutSummary}"/>
-            </StackPanel>
-        </Border>
-
-        <!-- ═══ SCAN BAR (legacy, hidden) ═════════════════════════════════════ -->
-        <Border DockPanel.Dock="Top"
-            Background="{DynamicResource PanelAltBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
-                Padding="10,7" IsEnabled="{Binding IsOperationEnabled}"
-                Visibility="Collapsed">
-            <StackPanel>
-
-                <!-- Tree Source row: Manage mode only, appears above Repo Path -->
-                <Grid Margin="0,0,0,6"
-                      Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Tree Source:" VerticalAlignment="Center"
-                               FontWeight="SemiBold" Margin="0,0,6,0"
-                               ToolTip="Optional: folder path or .json profile of a full clone — click Scan below to apply"/>
-                    <TextBox Grid.Column="1"
-                             Text="{Binding TreeSourcePath, UpdateSourceTrigger=PropertyChanged}"
-                             VerticalAlignment="Center" Padding="5,4"
-                             ToolTip="Folder path or .json profile — Scan will detect which and load accordingly"/>
-                    <Button Grid.Column="3" Content="Browse…"
-                            Command="{Binding BrowseTreeSourcePathCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"/>
-                    <Button Grid.Column="5" Content="Load Profile"
-                            Command="{Binding PickTreeSourceProfileCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Pick a saved .json profile — sets the path above; click Scan to load it"/>
-                </Grid>
-
-                <!-- Repo Path / Scan Path row: always visible -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                               FontWeight="SemiBold" Margin="0,0,6,0">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="Scan Path:"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsManageMode}" Value="True">
-                                        <Setter Property="Text" Value="Repo Path:"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBox Grid.Column="1"
-                             Text="{Binding ScanPath, UpdateSourceTrigger=PropertyChanged}"
-                             VerticalAlignment="Center" Padding="5,4"
-                             ToolTip="Path to the repository folder (git clone or plain copy)"/>
-                    <Button Grid.Column="3" Content="Browse…"
-                            Command="{Binding BrowseScanPathCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"/>
-                    <Button Grid.Column="5" Content="Load Profile"
-                            Command="{Binding LoadProfileCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Load a saved .json profile — populates path and tree automatically"/>
-                    <Button Grid.Column="7" Content="Scan"
-                            Command="{Binding ScanCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0"
-                            ToolTip="Scan folder or load .json profile set in Tree Source above"/>
-                </Grid>
-
-            </StackPanel>
-        </Border>
-
-        <!-- ═══ PRESET BAR ══════════════════════════════════════════════════ -->
-        <Border DockPanel.Dock="Top"
-            Background="{DynamicResource PresetPanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
-                Padding="10,6" IsEnabled="{Binding IsOperationEnabled}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Preset:" VerticalAlignment="Center"
-                           FontWeight="SemiBold" Margin="0,0,6,0"/>
-                <ComboBox ItemsSource="{Binding AvailablePresets}"
-                          SelectedItem="{Binding SelectedPreset}"
-                          DisplayMemberPath="Name"
-                          Width="200" VerticalAlignment="Center"
-                          Padding="5,3" Margin="0,0,8,0"/>
-                <Button Content="Load"
-                        Command="{Binding LoadPresetCommand}"
-                        Style="{StaticResource ActionButton}"
-                        ToolTip="Apply this preset's saved paths to the tree"/>
-                <Button Content="Save…"
-                        Command="{Binding SavePresetCommand}"
-                        Style="{StaticResource ActionButton}"
-                        ToolTip="Save the current selection as a named preset"/>
-                <Button Content="Rename"
-                        Command="{Binding RenamePresetCommand}"
-                        Style="{StaticResource ActionButton}"
-                        ToolTip="Rename the selected preset"/>
-                <Button Content="Delete"
-                        Command="{Binding DeletePresetCommand}"
-                        Style="{StaticResource ActionButton}"
-                    Foreground="{DynamicResource DangerBrush}" Margin="0"
-                        ToolTip="Delete the selected preset"/>
             </StackPanel>
         </Border>
 
@@ -475,15 +316,16 @@
         <Border DockPanel.Dock="Bottom"
             Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,1,0,0"
                 Padding="10,7" IsEnabled="{Binding IsOperationEnabled}">
-            <StackPanel Orientation="Horizontal">
-                <!-- Clone mode buttons -->
-                <StackPanel Orientation="Horizontal"
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Secondary actions (left) -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
                             Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}">
-                    <Button Command="{Binding GenerateScriptCommand}"
-                            Style="{StaticResource AccentActionButton}">
-                        <TextBlock Text="Generate Script" Foreground="White" FontWeight="SemiBold"/>
-                    </Button>
-                    <Button Content="Copy to Clipboard"
+                    <Button Content="Copy script"
                             Command="{Binding CopyScriptCommand}"
                             Style="{StaticResource ActionButton}"/>
                     <Button Content="Save .bat"
@@ -492,22 +334,10 @@
                     <Button Content="Save .sh"
                             Command="{Binding SaveShCommand}"
                             Style="{StaticResource ActionButton}"/>
-                        <Separator Width="1" Margin="4,2,14,2" Background="{DynamicResource SeparatorBrush}"/>
-                    <Button Command="{Binding ExecuteScriptCommand}"
-                            Style="{StaticResource DangerActionButton}"
-                            Margin="0"
-                            ToolTip="Runs the generated batch script on this machine">
-                        <TextBlock Text="Execute Locally" Foreground="White" FontWeight="SemiBold"/>
-                    </Button>
                 </StackPanel>
-                <!-- Manage mode buttons -->
-                <StackPanel Orientation="Horizontal"
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
                             Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
-                    <Button Command="{Binding GenerateManageScriptCommand}"
-                            Style="{StaticResource AccentActionButton}">
-                        <TextBlock Text="Generate Script" Foreground="White" FontWeight="SemiBold"/>
-                    </Button>
-                    <Button Content="Copy to Clipboard"
+                    <Button Content="Copy script"
                             Command="{Binding CopyScriptCommand}"
                             Style="{StaticResource ActionButton}"/>
                     <Button Content="Save .bat"
@@ -516,60 +346,206 @@
                     <Button Content="Save .sh"
                             Command="{Binding SaveManageShCommand}"
                             Style="{StaticResource ActionButton}"/>
-                        <Separator Width="1" Margin="4,2,14,2" Background="{DynamicResource SeparatorBrush}"/>
-                    <Button Command="{Binding ApplyManageCommand}"
-                            Style="{StaticResource SuccessActionButton}"
-                            Margin="0"
-                            IsEnabled="{Binding IsApplyEnabled}"
-                            ToolTip="Runs 'git sparse-checkout set' directly in the selected repository">
-                        <TextBlock Text="Apply Now" Foreground="White" FontWeight="SemiBold"/>
-                    </Button>
                 </StackPanel>
-            </StackPanel>
+
+                <!-- Primary action (right) -->
+                <Button Grid.Column="1" Content="Execute Locally"
+                        Command="{Binding ExecuteScriptCommand}"
+                        Style="{StaticResource AccentActionButton}"
+                        Margin="0"
+                        Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Runs the generated batch script on this machine"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}">
+                    <Button Content="Retry cleanup"
+                            Command="{Binding RetryCleanupCommand}"
+                            Style="{StaticResource ActionButton}"
+                            Visibility="{Binding HasCleanupLeftovers, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Close programs using these folders, then retry"/>
+                    <Button Content="Apply Now"
+                            Command="{Binding ApplyManageCommand}"
+                            Style="{StaticResource AccentActionButton}"
+                            Margin="0"
+                            ToolTip="Runs 'git sparse-checkout set' directly in the selected repository"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
-        <!-- ═══ CENTRE: SEARCH + TREE + PANELS ══════════════════════════════ -->
-        <Grid IsEnabled="{Binding IsOperationEnabled}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>  <!-- search bar -->
-                <RowDefinition Height="*"/>     <!-- tree + output -->
-            </Grid.RowDefinitions>
-
-            <!-- Search bar -->
-            <Border Grid.Row="0"
-                    BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
-                    Padding="10,6" Background="{DynamicResource SubPanelBackgroundBrush}">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Search tree:" VerticalAlignment="Center"
-                               FontWeight="SemiBold" Margin="0,0,6,0"/>
-                    <TextBox Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
-                             Width="260" VerticalAlignment="Center" Padding="5,4"/>
-                    <Button Content="Refresh tree"
-                            Command="{Binding RefreshTreeCommand}"
-                            Style="{StaticResource ActionButton}"
-                            Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}"
-                            ToolTip="Re-fetch the folder structure from the server for the selected branch"/>
-                    <Button Content="Clear tree cache"
-                            Command="{Binding ClearTreeCacheCommand}"
-                            Style="{StaticResource ActionButton}"
-                            Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}"
-                            ToolTip="Delete the locally cached tree data for every repository"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Tree + Output columns -->
-            <Grid Grid.Row="1">
+        <!-- ═══ BOTTOM: DESTINATION BAR (Clone) ═══════════════════════════════ -->
+        <Border DockPanel.Dock="Bottom"
+            Background="{DynamicResource SubPanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,1,0,0"
+                Padding="10,7" IsEnabled="{Binding IsConnected}"
+                Visibility="{Binding IsCloneMode, Converter={StaticResource BoolToVis}}">
+            <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="360" MinWidth="180"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*" MinWidth="200"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Clone into:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,0,8,0"/>
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding CloneParentFolder, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center" Padding="5,4"
+                         ToolTip="Folder in which the checkout folder is created"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse…" Margin="6,0,0,0" Padding="10,4"
+                        Command="{Binding BrowseCloneParentCommand}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Folder:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,4,8,0"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
+                         Text="{Binding FolderName, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center" Padding="5,4" Margin="0,4,0,0"
+                         ToolTip="Name of the checkout folder. Generated from the pattern in Settings until you edit it."/>
+                <Button Grid.Row="1" Grid.Column="2" Content="Auto" Margin="6,4,0,0" Padding="10,4"
+                        Style="{StaticResource ActionButton}"
+                        Command="{Binding ResetFolderNameCommand}"
+                        ToolTip="Use automatic name"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3,0,0"
+                           Text="{Binding DestinationPreview}" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding DestinationPreview}" FontSize="12">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasDestinationError}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="New Branch:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,8,8,0"
+                           ToolTip="Optional: create and switch to this branch after sparse checkout"/>
+                <TextBox Grid.Row="3" Grid.Column="1"
+                         Text="{Binding NewBranchName, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center" Padding="5,4" Margin="0,8,0,0"
+                         ToolTip="Optional: appends 'git checkout -b &lt;name&gt;' to the generated script"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3,0,0" FontSize="12"
+                           Text="{Binding NewBranchHint}" TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNewBranchInvalid}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="4" Orientation="Vertical"
+                            VerticalAlignment="Top">
+                    <CheckBox IsChecked="{Binding InitSubmodules}"
+                              ToolTip="Appends 'git submodule update --init --remote --recursive' to the script. Note: --remote updates each submodule to the latest commit on its upstream tracking branch, not the pinned superproject commit.">
+                        <TextBlock Text="Initialize submodules" FontSize="12"/>
+                    </CheckBox>
+                    <CheckBox IsChecked="{Binding KeepWindowOpen}"
+                              Margin="0,6,0,0"
+                              ToolTip="When enabled, the CMD window stays open after the script finishes so you can review output and errors. Disable to close automatically.">
+                        <TextBlock Text="Keep CMD window open" FontSize="12"/>
+                    </CheckBox>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═══ CENTRE: TREE | RIGHT PANEL ═══════════════════════════════════ -->
+        <Grid>
+            <Grid IsEnabled="{Binding IsOperationEnabled}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="320"/>
                     <ColumnDefinition Width="5"/>
-                    <ColumnDefinition Width="*" MinWidth="300"/>
+                    <ColumnDefinition Width="380" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- ── TREE PANEL ───────────────────────────────────────────── -->
                 <DockPanel Grid.Column="0">
-                    <Border DockPanel.Dock="Top" Background="{DynamicResource SectionHeaderBackgroundBrush}" Padding="8,4">
-                        <TextBlock Text="Repository Tree" FontWeight="SemiBold" FontSize="12"/>
+                    <!-- Search + presets -->
+                    <Border DockPanel.Dock="Top"
+                            Background="{DynamicResource SectionHeaderBackgroundBrush}"
+                            BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1"
+                            Padding="8,5">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MinWidth="80"/>
+                                <ColumnDefinition Width="10"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="Search:" VerticalAlignment="Center"
+                                       FontWeight="SemiBold" Margin="0,0,6,0"/>
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center" Padding="5,4"/>
+
+                            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                <Grid Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <ComboBox ItemsSource="{Binding AvailablePresets}"
+                                              SelectedItem="{Binding SelectedPreset}"
+                                              DisplayMemberPath="Name"
+                                              MinWidth="220"
+                                              Padding="5,3"
+                                              ToolTip="Saved presets for this repository"/>
+                                    <!-- Placeholder; sits over the (empty) selection box, clicks pass through -->
+                                    <TextBlock Text="Preset…" Margin="8,0,28,0"
+                                               VerticalAlignment="Center" IsHitTestVisible="False"
+                                               Foreground="{DynamicResource MutedTextBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedPreset}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                                <Button Content="Load"
+                                        Command="{Binding LoadPresetCommand}"
+                                        Style="{StaticResource ActionButton}"
+                                        Padding="10,5" Margin="0,0,6,0"
+                                        ToolTip="Apply this preset's saved paths to the tree"/>
+                                <Button Content="Save…"
+                                        Command="{Binding SavePresetCommand}"
+                                        Style="{StaticResource ActionButton}"
+                                        Padding="10,5" Margin="0,0,6,0"
+                                        ToolTip="Save the current selection as a named preset"/>
+                                <Button x:Name="PresetMenuButton" Content="&#x22EF;"
+                                        Style="{StaticResource ActionButton}"
+                                        Padding="8,5" Margin="0"
+                                        Click="PresetMenuButton_Click"
+                                        ToolTip="More preset actions">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Rename"
+                                                      Command="{Binding RenamePresetCommand}"/>
+                                            <MenuItem Header="Delete"
+                                                      Command="{Binding DeletePresetCommand}"
+                                                      Foreground="{DynamicResource DangerBrush}"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                     </Border>
+
                     <TreeView ItemsSource="{Binding TreeNodes}"
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
@@ -592,15 +568,12 @@
                                                     <DataTrigger Binding="{Binding IsFolder}" Value="False">
                                                         <Setter Property="Visibility" Value="Hidden"/>
                                                     </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </CheckBox.Style>
                                     </CheckBox>
 
-                                    <!-- Node name: bold for folders, muted for excluded files and placeholders -->
+                                    <!-- Node name: bold for folders, muted for excluded files -->
                                     <TextBlock VerticalAlignment="Center" Text="{Binding Name}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
@@ -619,11 +592,6 @@
                                                         </MultiDataTrigger.Conditions>
                                                         <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
                                                     </MultiDataTrigger>
-                                                    <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                                        <Setter Property="FontStyle" Value="Italic"/>
-                                                        <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
-                                                        <Setter Property="ToolTip" Value="{x:Null}"/>
-                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
@@ -643,12 +611,12 @@
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
                               Background="{DynamicResource SplitterBrush}"/>
 
-                <!-- ── RIGHT PANELS ─────────────────────────────────────────── -->
+                <!-- ── RIGHT PANEL ──────────────────────────────────────────── -->
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" MinHeight="80"/>
-                        <RowDefinition Height="5"/>
-                        <RowDefinition Height="2*" MinHeight="120"/>
+                        <RowDefinition x:Name="ScriptSplitterRow" Height="Auto"/>
+                        <RowDefinition x:Name="ScriptRow" Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Selected paths (Clone) -->
@@ -657,12 +625,30 @@
                         <Border DockPanel.Dock="Top" Background="{DynamicResource SectionHeaderBackgroundBrush}" Padding="8,4">
                             <TextBlock Text="Selected Paths" FontWeight="SemiBold" FontSize="12"/>
                         </Border>
-                        <TextBox Text="{Binding SelectedPathsText, Mode=OneWay}"
-                                 IsReadOnly="True" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas" FontSize="11"
-                                 Padding="8"/>
+                        <Grid>
+                            <TextBox Text="{Binding SelectedPathsText, Mode=OneWay}"
+                                     IsReadOnly="True" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11"
+                                     Padding="8"/>
+                            <TextBlock Text="Tick folders in the tree to include them"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       TextAlignment="Center" TextWrapping="Wrap" Margin="12"
+                                       IsHitTestVisible="False"
+                                       Foreground="{DynamicResource MutedTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedPathsText}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
                     </DockPanel>
 
                     <!-- Pending changes (Manage) -->
@@ -679,26 +665,50 @@
                                  Padding="8"/>
                     </DockPanel>
 
-                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                    <GridSplitter x:Name="ScriptSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Visibility="Collapsed"
                                   Background="{DynamicResource SplitterBrush}"/>
 
-                    <!-- Generated script -->
-                    <DockPanel Grid.Row="2">
-                        <Border DockPanel.Dock="Top" Background="{DynamicResource SectionHeaderBackgroundBrush}" Padding="8,4">
-                            <TextBlock Text="Generated Script" FontWeight="SemiBold" FontSize="12"/>
-                        </Border>
-                        <TextBox Text="{Binding GeneratedScript}"
-                                 AcceptsReturn="True" AcceptsTab="True"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas" FontSize="11"
-                                 Padding="8"/>
-                    </DockPanel>
+                    <!-- Script (collapsed by default) + last apply output -->
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Expander Grid.Row="0" Header="Script" FontWeight="SemiBold" FontSize="12"
+                                  Style="{StaticResource SectionExpander}"
+                                  ExpandDirection="Up"
+                                  IsExpanded="{Binding ScriptPanelExpanded, Mode=TwoWay}"
+                                  Expanded="ScriptExpander_Changed"
+                                  Collapsed="ScriptExpander_Changed">
+                            <TextBox Text="{Binding GeneratedScript, Mode=OneWay}"
+                                     IsReadOnly="True" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11" FontWeight="Normal"
+                                     Padding="8"/>
+                        </Expander>
+
+                        <DockPanel Grid.Row="1"
+                                   Visibility="{Binding HasLastApplyLog, Converter={StaticResource BoolToVis}}">
+                            <Border DockPanel.Dock="Top" Background="{DynamicResource SectionHeaderBackgroundBrush}" Padding="8,4">
+                                <TextBlock Text="Last apply output" FontWeight="SemiBold" FontSize="12"/>
+                            </Border>
+                            <TextBox Text="{Binding LastApplyLog, Mode=OneWay}"
+                                     IsReadOnly="True" AcceptsReturn="True"
+                                     MaxHeight="110"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11"
+                                     Padding="8"/>
+                        </DockPanel>
+                    </Grid>
                 </Grid>
             </Grid>
 
-            <!-- Loading overlay (covers the tree + output area) -->
-            <Grid Grid.Row="1" Panel.ZIndex="20"
+            <!-- Loading overlay (covers the tree + right panel area) -->
+            <Grid Panel.ZIndex="20"
                   Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"
                 Background="{DynamicResource OverlayBrush}">
                 <Border HorizontalAlignment="Center" VerticalAlignment="Center"

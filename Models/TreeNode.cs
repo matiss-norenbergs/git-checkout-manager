@@ -22,11 +22,5 @@ namespace GitSparseManager.Models
         /// <summary>True for a gitlink entry (mode 160000) pointing at another repository.</summary>
         [JsonPropertyName("isSubmodule")]
         public bool IsSubmodule { get; set; }
-
-        /// <summary>
-        /// True when this folder sits at the scan depth boundary and has children that were not traversed.
-        /// Cleared to false for files and for empty boundary folders.
-        /// </summary>
-        public bool HasUnscannedChildren { get; set; }
     }
 }
