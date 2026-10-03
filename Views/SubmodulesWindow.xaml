@@ -85,6 +85,8 @@
                                             <ColumnDefinition Width="170"/>
                                             <ColumnDefinition Width="140"/>
                                             <ColumnDefinition Width="2*"/>
+                                            <!-- Fixed, so rows without actions keep the same width and every column lines up -->
+                                            <ColumnDefinition Width="36"/>
                                         </Grid.ColumnDefinitions>
 
                                         <CheckBox Grid.Column="0" VerticalAlignment="Top"
@@ -102,7 +104,7 @@
                                         </StackPanel>
 
                                         <!-- Full row width, left-aligned with the path text -->
-                                        <Expander Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4"
+                                        <Expander Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
                                                   Header="Error details" FontWeight="SemiBold" FontSize="12"
                                                   Margin="0,6,0,0"
                                                   Style="{StaticResource SectionExpander}"
@@ -136,12 +138,42 @@
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="4">
-                                            <TextBlock Text="{Binding Url}" TextTrimming="CharacterEllipsis"
-                                                       ToolTip="{Binding Url}"/>
+                                            <TextBlock Text="{Binding DisplayUrl}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding DisplayUrl}"/>
                                             <TextBlock Text="{Binding BranchText}"
                                                        FontSize="11.5" TextTrimming="CharacterEllipsis"
                                                        Foreground="{DynamicResource MutedTextBrush}"/>
+                                            <TextBlock Text="{Binding OverrideText}" FontSize="11.5"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding OverrideToolTip}"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Visibility="{Binding UrlOverridden, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
+
+                                        <!-- Row actions. The menu reaches the window's view model through the button's Tag. -->
+                                        <Button Grid.Column="5" Content="&#x22EF;" Width="28" Padding="0,0,0,2"
+                                                VerticalAlignment="Top" Margin="8,0,0,0" ToolTip="Actions"
+                                                IsEnabled="{Binding ActionsEnabled}"
+                                                Visibility="{Binding HasActions, Converter={StaticResource BoolToVis}}"
+                                                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Click="ActionsButton_Click">
+                                            <Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Set URL…"
+                                                              Visibility="{Binding CanSetUrl, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.SetUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Reset URL"
+                                                              Visibility="{Binding CanResetUrl, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.ResetUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Clone manually…"
+                                                              Visibility="{Binding CanCloneManually, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.CloneManuallyCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
+                                        </Button>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

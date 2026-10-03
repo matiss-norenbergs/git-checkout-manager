@@ -66,7 +66,10 @@ _bin/          prebuilt binaries, intentionally committed for now
 ### Submodules (`SubmoduleService`, `SubmodulesWindow`)
 - **Never use `git submodule status`:** it aborts on the first gitlink without a `.gitmodules` entry.
 - Detection: `ls-files -s -z` (mode 160000) + `git config -f .gitmodules -z --get-regexp "^submodule\."` (names may contain dots: split at the first `submodule.` and the last dot) + folder existence + `.git` inside + `rev-parse HEAD`.
-- States: Ready, DifferentCommit, NotInitialized, MissingFromGitmodules, OutsideCheckout (+ runtime Failed/Queued/Working).
+- States: Ready, DifferentCommit, NotInitialized, MissingFromGitmodules, ManuallyCloned, OutsideCheckout (+ runtime Failed/Queued/Working). A path without a `.gitmodules` entry is `ManuallyCloned` when its folder holds a repository with a readable HEAD, else `MissingFromGitmodules`.
+- **Local fixes (never touch `.gitmodules`):** `SetUrlAndInitAsync` writes `submodule.<name>.url` and the marker `submodule.<name>.gcmUrlOverride=true` to the checkout's local `.git/config`, then runs the normal init/update (`submodule init` keeps an existing local URL, so the override wins). `SubmoduleInfo.UrlOverridden`/`EffectiveUrl` are read with `git config --local --get`. `ResetUrlAsync` unsets only the marker (exit 5 = not set is fine), then runs `git submodule sync -- <path>`, which writes the `.gitmodules` URL back into `.git/config` and the submodule's own origin; unsetting `submodule.<name>.url` instead would leave the submodule looking uninitialized. Any other `git submodule sync` likewise overwrites a local URL override while the marker stays, so the UI can show a stale "overridden" flag. A `ManuallyCloned` row has no name; its `EffectiveUrl` is the clone's `origin` and is shown in the URL column.
+- `CloneManuallyAsync` (MissingFromGitmodules only): refuses a non-empty folder, `git clone --no-checkout <url> <path>`, then `checkout --detach <PinnedSha>`; on failure (or cancel) it deletes what was created and restores the original empty folder. The result is not a registered submodule, so `git submodule` commands ignore it.
+- URL picker: `SubmoduleUrlWindow` via `IDialogService.ShowSubmoduleUrl`; it tests the URL with `TestUrlAsync` (`ls-remote --heads`) before returning it.
 - Init runs **one submodule at a time**: `submodule init -- <path>`, read the resolved URL, choose auth for **that** URL's host, then `submodule update [--remote] [--recursive] -- <path>` with `allowInteractiveAuth: true` (lets Git Credential Manager prompt for unknown hosts).
 
 ### Script generation (`CommandGenerator`)
@@ -119,7 +122,6 @@ All paths come from `AppPaths`. The project was renamed from GitSparseManager; `
 
 ## 8. Planned / not yet built
 
-- Submodules v2: **Set URL…** (local override via `git config submodule.<name>.url`, choosing from the host's repo list) and a manual-clone fallback for gitlinks missing from `.gitmodules`.
 - Submodules v3: offer the Submodules window after Execute Locally when exit code is 2; nested submodule rows; "Copy report".
 - Switching submodule branches (fetch + checkout in the submodule, with dirty-state checks and "Reset to recorded commit").
 - Manage `.bat` cleanup line: escape `'` in paths passed to PowerShell `Remove-Item`.

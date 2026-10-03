@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using GitCheckoutManager.ViewModels;
 
@@ -14,6 +16,14 @@ namespace GitCheckoutManager.Views
             // Cancel comes first while git is running, so a half-finished update is never abandoned silently.
             Closing += (_, e) => e.Cancel = (DataContext as SubmodulesViewModel)?.IsRunning == true;
             Closed += (_, _) => (DataContext as SubmodulesViewModel)?.Cancel();
+        }
+
+        private void ActionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button { ContextMenu: { } menu } button) return;
+            menu.PlacementTarget = button;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
         }
     }
 

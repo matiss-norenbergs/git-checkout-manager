@@ -23,6 +23,9 @@ namespace GitCheckoutManager.ViewModels
         public string Path => Info.Path;
         public string? Name => Info.Name;
         public string? Url => Info.Url;
+
+        /// <summary>The URL column: .gitmodules, or for a manual clone the origin it was cloned from.</summary>
+        public string? DisplayUrl => State == SubmoduleState.ManuallyCloned ? Info.EffectiveUrl : Info.Url;
         public string? Branch => Info.Branch;
         public SubmoduleState State => Info.State;
 
@@ -37,6 +40,7 @@ namespace GitCheckoutManager.ViewModels
             SubmoduleState.DifferentCommit => "On a different commit",
             SubmoduleState.NotInitialized => "Not initialized",
             SubmoduleState.MissingFromGitmodules => "Missing from .gitmodules",
+            SubmoduleState.ManuallyCloned => "Cloned manually",
             SubmoduleState.OutsideCheckout => "Not in your checkout",
             _ => State.ToString()
         };
@@ -49,6 +53,9 @@ namespace GitCheckoutManager.ViewModels
             SubmoduleState.MissingFromGitmodules =>
                 "This submodule is in the repository but has no entry in .gitmodules, so git doesn't know " +
                 "its URL. Ask the repo maintainer to add it.",
+            SubmoduleState.ManuallyCloned =>
+                "Not a registered submodule — git submodule commands won't manage it. " +
+                "Fix .gitmodules in the repository to make it a proper submodule.",
             _ => null
         };
 
@@ -57,9 +64,20 @@ namespace GitCheckoutManager.ViewModels
         {
             SubmoduleState.Ready => "SuccessBrush",
             SubmoduleState.DifferentCommit => "AccentBrush",
+            SubmoduleState.ManuallyCloned => "AccentBrush",
             SubmoduleState.MissingFromGitmodules => "DangerBrush",
             _ => "MutedTextBrush"
         };
+
+        public bool UrlOverridden => Info.UrlOverridden;
+        public string OverrideText => $"URL overridden locally: {Info.EffectiveUrl}";
+        public string OverrideToolTip => "Only this checkout uses this URL. .gitmodules still needs fixing in the repository.";
+
+        /// <summary>Has a .gitmodules entry and is on disk, so its URL can be replaced for this checkout.</summary>
+        public bool CanSetUrl => Info.Name != null && State != SubmoduleState.OutsideCheckout;
+        public bool CanResetUrl => UrlOverridden;
+        public bool CanCloneManually => State == SubmoduleState.MissingFromGitmodules;
+        public bool HasActions => CanSetUrl || CanResetUrl || CanCloneManually;
 
         /// <summary>Why the last action on this submodule failed. Empty until an action fills it.</summary>
         [ObservableProperty]
@@ -82,8 +100,11 @@ namespace GitCheckoutManager.ViewModels
 
         /// <summary>Set by the window while a run is active, so the checkbox can't change under it.</summary>
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(IsSelectable))]
+        [NotifyPropertyChangedFor(nameof(IsSelectable), nameof(ActionsEnabled))]
         private bool _isLocked;
+
+        /// <summary>The row's action menu is usable only while no run is active.</summary>
+        public bool ActionsEnabled => !IsLocked;
 
         /// <summary>
         /// Something can be done to this row: it is missing or off its pinned commit, or its last action
@@ -102,8 +123,9 @@ namespace GitCheckoutManager.ViewModels
         {
             SubmoduleState.Ready => "Already on the commit the main repo expects. Nothing to do.",
             SubmoduleState.MissingFromGitmodules =>
-                "No entry in .gitmodules, so there is no URL to clone from. Ask the repo maintainer to add it.",
+                "No entry in .gitmodules, so there is no URL to clone from. Use the row menu to clone it manually, or ask the repo maintainer to add it.",
             SubmoduleState.OutsideCheckout => "Not in your sparse checkout, so it is not on disk.",
+            SubmoduleState.ManuallyCloned => "Cloned by hand, so git submodule commands don't manage it.",
             _ => null
         };
 
@@ -128,6 +150,7 @@ namespace GitCheckoutManager.ViewModels
         private readonly IDialogService _dialogService;
         private readonly AppSettings _settings;
         private readonly ISettingsService _settingsService;
+        private readonly Func<IReadOnlyList<Repository>> _getRepositories;
         private readonly CancellationTokenSource _cts = new();
         private CancellationTokenSource? _runCts;
         private List<SubmoduleRowViewModel> _all = new();
@@ -137,8 +160,10 @@ namespace GitCheckoutManager.ViewModels
 
         public SubmodulesViewModel(ISubmoduleService submoduleService, string root,
             Func<string, GitAuth?> resolveAuth, IDialogService dialogService,
-            AppSettings settings, ISettingsService settingsService)
+            AppSettings settings, ISettingsService settingsService,
+            Func<IReadOnlyList<Repository>>? getRepositories = null)
         {
+            _getRepositories = getRepositories ?? (() => Array.Empty<Repository>());
             _submoduleService = submoduleService;
             _root = root;
             _resolveAuth = resolveAuth;
@@ -165,6 +190,9 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(InitializeSelectedCommand))]
         [NotifyCanExecuteChangedFor(nameof(CancelRunCommand))]
         [NotifyCanExecuteChangedFor(nameof(SelectAllWithProblemsCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SetUrlCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ResetUrlCommand))]
+        [NotifyCanExecuteChangedFor(nameof(CloneManuallyCommand))]
         private bool _isRunning;
 
         /// <summary>No run is active; the options, Refresh and Close are available.</summary>
@@ -299,7 +327,13 @@ namespace GitCheckoutManager.ViewModels
 
         private bool CanInitializeSelected() => !IsRunning && !IsBusy && SelectedRows().Count > 0;
 
-        partial void OnIsBusyChanged(bool value) => InitializeSelectedCommand.NotifyCanExecuteChanged();
+        partial void OnIsBusyChanged(bool value)
+        {
+            InitializeSelectedCommand.NotifyCanExecuteChanged();
+            SetUrlCommand.NotifyCanExecuteChanged();
+            ResetUrlCommand.NotifyCanExecuteChanged();
+            CloneManuallyCommand.NotifyCanExecuteChanged();
+        }
 
         /// <summary>
         /// Initializes the selected submodules strictly one after another, in list order. A failure is
@@ -314,11 +348,7 @@ namespace GitCheckoutManager.ViewModels
             var latest = LatestFromBranch;
             var nested = IncludeNested;
 
-            if (latest && !_dialogService.ShowConfirmation(
-                    "Latest from branch moves submodules away from the commit the main repo expects. " +
-                    "The main repo will then show them as changed. Continue?",
-                    "Latest from branch"))
-                return;
+            if (latest && !ConfirmLatest()) return;
 
             IsRunning = true;
             HasInitialized = true;
@@ -409,6 +439,137 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
+        // -- Row actions: fix a broken submodule for this checkout only ----------
+
+        private bool CanRowAction(SubmoduleRowViewModel? row) => !IsRunning && !IsBusy && row != null;
+
+        [RelayCommand(CanExecute = nameof(CanRowAction))]
+        private async Task SetUrlAsync(SubmoduleRowViewModel? row)
+        {
+            if (row == null) return;
+
+            var latest = LatestFromBranch;
+            var nested = IncludeNested;
+            if (latest && !ConfirmLatest()) return;
+
+            var url = PickUrl(row);
+            if (url == null) return;
+
+            await RunRowActionAsync(row, "Set URL for",
+                ct => _submoduleService.SetUrlAndInitAsync(_root, row.Info, url, latest, nested, _resolveAuth, ct));
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRowAction))]
+        private async Task ResetUrlAsync(SubmoduleRowViewModel? row)
+        {
+            if (row == null) return;
+            if (!_dialogService.ShowConfirmation("Use the URL from .gitmodules again?", "Reset URL")) return;
+
+            await RunRowActionAsync(row, "Reset URL for",
+                ct => _submoduleService.ResetUrlAsync(_root, row.Info, ct));
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRowAction))]
+        private async Task CloneManuallyAsync(SubmoduleRowViewModel? row)
+        {
+            if (row == null) return;
+
+            if (!_dialogService.ShowConfirmation(
+                    $"This repository has no .gitmodules entry for {row.Path}. The app will clone the repository " +
+                    $"you choose into that folder at the commit the main repo expects ({row.PinnedShortSha}). " +
+                    "Git won't treat it as a registered submodule.",
+                    "Clone manually"))
+                return;
+
+            var url = PickUrl(row);
+            if (url == null) return;
+
+            await RunRowActionAsync(row, "Cloned",
+                ct => _submoduleService.CloneManuallyAsync(_root, row.Info, url, _resolveAuth, ct));
+        }
+
+        private bool ConfirmLatest() => _dialogService.ShowConfirmation(
+            "Latest from branch moves submodules away from the commit the main repo expects. " +
+            "The main repo will then show them as changed. Continue?",
+            "Latest from branch");
+
+        private string? PickUrl(SubmoduleRowViewModel row) => _dialogService.ShowSubmoduleUrl(new SubmoduleUrlModel
+        {
+            Path = row.Path,
+            GitmodulesUrl = row.Url,
+            Repositories = _getRepositories(),
+            TestUrlAsync = async (url, ct) =>
+            {
+                var result = await _submoduleService.TestUrlAsync(url, _resolveAuth(url), ct);
+                return result.ExitCode == 0 ? null : FirstErrorLine(result);
+            }
+        });
+
+        /// <summary>Runs one action on one row with the same live states as an initialize run (Working... then the result).</summary>
+        private async Task RunRowActionAsync(SubmoduleRowViewModel row, string verb,
+            Func<CancellationToken, Task<GitResult>> action)
+        {
+            IsRunning = true;
+            HasInitialized = true;
+            ResultText = string.Empty;
+            foreach (var r in _all) r.IsLocked = true;
+
+            _runCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            var ct = _runCts.Token;
+            var path = row.Path;
+
+            try
+            {
+                row.IsWorking = true;
+                GitResult result;
+                try
+                {
+                    result = await action(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    ResultText = "Cancelled.";
+                    await LoadAsync();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    result = new GitResult(-1, string.Empty, ex.Message);
+                }
+                finally
+                {
+                    row.IsWorking = false;
+                }
+
+                if (result.ExitCode == 0)
+                {
+                    row.Error = string.Empty;
+                    _errors.Remove(path);
+                    ResultText = $"{verb} {path}: done.";
+                }
+                else
+                {
+                    row.Error = _errors[path] = TailOf(result);
+                    ResultText = $"{verb} {path}: failed.";
+                }
+
+                await LoadAsync();
+            }
+            finally
+            {
+                _runCts.Dispose();
+                _runCts = null;
+                foreach (var r in _all) r.IsLocked = false;
+                IsRunning = false;
+            }
+        }
+
+        private static string FirstErrorLine(GitResult result) =>
+            (string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr)
+                .Split('\n')
+                .Select(l => l.Trim())
+                .FirstOrDefault(l => l.Length > 0) ?? $"git exited with code {result.ExitCode}.";
+
         [RelayCommand(CanExecute = nameof(IsRunning))]
         private void CancelRun() => _runCts?.Cancel();
 
@@ -478,6 +639,10 @@ namespace GitCheckoutManager.ViewModels
             Add(SubmoduleState.DifferentCommit, "on a different commit");
             Add(SubmoduleState.NotInitialized, "not initialized");
             Add(SubmoduleState.MissingFromGitmodules, "missing from .gitmodules");
+            Add(SubmoduleState.ManuallyCloned, "cloned manually");
+
+            var overridden = _all.Count(r => r.UrlOverridden);
+            if (overridden > 0) parts.Add($"{overridden} with a local URL override");
 
             var text = inCheckout == 0
                 ? "No submodules in your checkout"

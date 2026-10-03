@@ -10,6 +10,8 @@ namespace GitCheckoutManager.Models
         NotInitialized,
         /// <summary>In the tree, but .gitmodules has no entry for it, so its URL is unknown.</summary>
         MissingFromGitmodules,
+        /// <summary>No .gitmodules entry, but its folder holds a repository (cloned by hand or by this app).</summary>
+        ManuallyCloned,
         /// <summary>Its folder is not on disk because the sparse selection leaves it out.</summary>
         OutsideCheckout
     }
@@ -21,6 +23,8 @@ namespace GitCheckoutManager.Models
     /// <param name="Branch">submodule.&lt;name&gt;.branch from .gitmodules, if any.</param>
     /// <param name="PinnedSha">Commit recorded in the main repository.</param>
     /// <param name="CurrentSha">HEAD inside the submodule when populated.</param>
+    /// <param name="UrlOverridden">The checkout's local config carries a URL set by this app (<c>gcmUrlOverride</c>).</param>
+    /// <param name="EffectiveUrl">submodule.&lt;name&gt;.url from the local config, when set.</param>
     public sealed record SubmoduleInfo(
         string Path,
         string? Name,
@@ -28,5 +32,7 @@ namespace GitCheckoutManager.Models
         string? Branch,
         string PinnedSha,
         string? CurrentSha,
-        SubmoduleState State);
+        SubmoduleState State,
+        bool UrlOverridden = false,
+        string? EffectiveUrl = null);
 }

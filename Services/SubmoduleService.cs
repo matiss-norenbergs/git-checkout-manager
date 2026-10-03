@@ -12,6 +12,9 @@ namespace GitCheckoutManager.Services
         private const string GitlinkMode = "160000";
         private const int MaxParallelGitCalls = 8;
 
+        /// <summary>Local-config marker written next to an overridden URL, so the app can tell its own override from git's.</summary>
+        private const string OverrideKey = "gcmUrlOverride";
+
         private readonly IGitService _gitService;
 
         public SubmoduleService(IGitService gitService) => _gitService = gitService;
@@ -73,6 +76,96 @@ namespace GitCheckoutManager.Services
             return await _gitService.RunAsync(args, root, auth, ct, allowInteractiveAuth: true);
         }
 
+        public Task<GitResult> TestUrlAsync(string url, GitAuth? auth, CancellationToken ct = default) =>
+            _gitService.RunAsync(new[] { "ls-remote", "--heads", url }, null, auth, ct, allowInteractiveAuth: true);
+
+        public async Task<GitResult> SetUrlAndInitAsync(string root, SubmoduleInfo sub, string newUrl,
+            bool latestFromBranch, bool includeNested, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(sub.Name))
+                return new GitResult(1, string.Empty, "This submodule has no entry in .gitmodules, so there is no name to attach a URL to.");
+
+            // Only the checkout's own .git/config is written. `submodule init` keeps a URL that is already
+            // set there, so this one wins over .gitmodules.
+            var url = await _gitService.RunAsync(
+                new[] { "config", $"submodule.{sub.Name}.url", newUrl }, root, null, ct);
+            if (url.ExitCode != 0) return url;
+
+            var marker = await _gitService.RunAsync(
+                new[] { "config", $"submodule.{sub.Name}.{OverrideKey}", "true" }, root, null, ct);
+            if (marker.ExitCode != 0) return marker;
+
+            return await InitAndUpdateAsync(root, sub, latestFromBranch, includeNested, resolveAuth, ct);
+        }
+
+        public async Task<GitResult> ResetUrlAsync(string root, SubmoduleInfo sub, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(sub.Name)) return new GitResult(0, string.Empty, string.Empty);
+
+            var unset = await _gitService.RunAsync(
+                new[] { "config", "--unset", $"submodule.{sub.Name}.{OverrideKey}" }, root, null, ct);
+
+            // Exit code 5 means the marker was not set, which is the state we want anyway.
+            if (unset.ExitCode != 0 && unset.ExitCode != 5) return unset;
+
+            // Writes the .gitmodules URL back into .git/config (and the submodule's own origin), so the
+            // submodule stays registered. Unsetting the url instead would make git treat it as uninitialized.
+            return await _gitService.RunAsync(new[] { "submodule", "sync", "--", sub.Path }, root, null, ct);
+        }
+
+        public async Task<GitResult> CloneManuallyAsync(string root, SubmoduleInfo sub, string url,
+            Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        {
+            var folder = Path.Combine(root, sub.Path.Replace('/', Path.DirectorySeparatorChar));
+            var existed = Directory.Exists(folder);
+
+            if (File.Exists(folder) || (existed && Directory.EnumerateFileSystemEntries(folder).Any()))
+                return new GitResult(1, string.Empty, $"The folder '{sub.Path}' is not empty, so nothing was cloned into it.");
+
+            try
+            {
+                var clone = await _gitService.RunAsync(
+                    new[] { "clone", "--no-checkout", "--", url, sub.Path }, root, resolveAuth(url), ct,
+                    allowInteractiveAuth: true);
+                if (clone.ExitCode != 0)
+                {
+                    RestoreEmptyFolder(folder, existed);
+                    return clone;
+                }
+
+                var checkout = await _gitService.RunAsync(
+                    new[] { "-C", folder, "checkout", "--detach", sub.PinnedSha }, null, null, ct);
+                if (checkout.ExitCode != 0) RestoreEmptyFolder(folder, existed);
+                return checkout;
+            }
+            catch
+            {
+                // Cancelled or crashed half way: leave the checkout as it was.
+                RestoreEmptyFolder(folder, existed);
+                throw;
+            }
+        }
+
+        /// <summary>Removes whatever a failed clone left behind and puts the original (empty or absent) folder back.</summary>
+        private static void RestoreEmptyFolder(string folder, bool existed)
+        {
+            try
+            {
+                if (Directory.Exists(folder))
+                {
+                    // git marks object files read-only, which blocks deletion on Windows.
+                    foreach (var f in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+                        File.SetAttributes(f, FileAttributes.Normal);
+                    Directory.Delete(folder, recursive: true);
+                }
+                if (existed) Directory.CreateDirectory(folder);
+            }
+            catch
+            {
+                // Best effort; the next Refresh shows what is really on disk.
+            }
+        }
+
         // ── Steps ─────────────────────────────────────────────────────────────
 
         /// <summary>Gitlink entries of the index. These are listed even when the sparse selection leaves them off disk.</summary>
@@ -130,23 +223,49 @@ namespace GitCheckoutManager.Services
             var url = entry.Config?.Url;
             var branch = string.IsNullOrWhiteSpace(entry.Config?.Branch) ? null : entry.Config!.Branch;
 
-            SubmoduleInfo Make(SubmoduleState state, string? current = null) =>
-                new(path, name, url, branch, pinnedSha, current, state);
-
             var folder = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(folder))
+                return new SubmoduleInfo(path, name, url, branch, pinnedSha, null, SubmoduleState.OutsideCheckout);
 
-            if (!Directory.Exists(folder)) return Make(SubmoduleState.OutsideCheckout);
-            if (entry.Config == null) return Make(SubmoduleState.MissingFromGitmodules);
+            var overridden = false;
+            string? effectiveUrl = null;
+            if (name == null)
+            {
+                // Cloned by hand: show where it came from.
+                var origin = await _gitService.RunAsync(
+                    new[] { "-C", folder, "remote", "get-url", "origin" }, null, null, ct);
+                if (origin.ExitCode == 0 && origin.StdOut.Trim().Length > 0) effectiveUrl = origin.StdOut.Trim();
+            }
+            else
+            {
+                var marker = await _gitService.RunAsync(
+                    new[] { "config", "--local", "--get", $"submodule.{name}.{OverrideKey}" }, root, null, ct);
+                overridden = marker.ExitCode == 0 &&
+                    string.Equals(marker.StdOut.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+
+                var local = await _gitService.RunAsync(
+                    new[] { "config", "--local", "--get", $"submodule.{name}.url" }, root, null, ct);
+                if (local.ExitCode == 0 && local.StdOut.Trim().Length > 0) effectiveUrl = local.StdOut.Trim();
+            }
+
+            SubmoduleInfo Make(SubmoduleState state, string? current = null) =>
+                new(path, name, url, branch, pinnedSha, current, state, overridden, effectiveUrl);
 
             // A populated submodule has a ".git" file (gitdir pointer) or folder of its own.
             var dotGit = Path.Combine(folder, ".git");
-            if (!File.Exists(dotGit) && !Directory.Exists(dotGit)) return Make(SubmoduleState.NotInitialized);
+            var populated = File.Exists(dotGit) || Directory.Exists(dotGit);
+            var registered = entry.Config != null;
+
+            if (!populated) return Make(registered ? SubmoduleState.NotInitialized : SubmoduleState.MissingFromGitmodules);
 
             var head = await _gitService.RunAsync(new[] { "-C", folder, "rev-parse", "HEAD" }, null, null, ct);
             var current = head.ExitCode == 0 ? head.StdOut.Trim() : string.Empty;
 
             // No readable HEAD means nothing usable is checked out there.
-            if (current.Length == 0) return Make(SubmoduleState.NotInitialized);
+            if (current.Length == 0)
+                return Make(registered ? SubmoduleState.NotInitialized : SubmoduleState.MissingFromGitmodules);
+
+            if (!registered) return Make(SubmoduleState.ManuallyCloned, current);
 
             return Make(
                 string.Equals(current, pinnedSha, StringComparison.OrdinalIgnoreCase)

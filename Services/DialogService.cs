@@ -60,6 +60,15 @@ namespace GitCheckoutManager.Services
             window.ShowDialog();
         }
 
+        public string? ShowSubmoduleUrl(SubmoduleUrlModel model)
+        {
+            // Owner is the Submodules window that is currently active, falling back to the main window.
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            var window = new SubmoduleUrlWindow(model) { Owner = owner };
+            return window.ShowDialog() == true ? window.ChosenUrl : null;
+        }
+
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")
         {
             var textBox = new TextBox
