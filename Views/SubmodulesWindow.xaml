@@ -28,7 +28,8 @@
                                 <Setter TargetName="Label" Property="TextDecorations" Value="Underline"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Label" Property="Opacity" Value="0.5"/>
+                                <Setter TargetName="Label" Property="Opacity" Value="0.45"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -68,14 +69,16 @@
                 Background="{DynamicResource SubPanelBackgroundBrush}"
                 BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1">
             <Grid>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Rows}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              FocusVisualStyle="{x:Null}">
+                    <ItemsControl ItemsSource="{Binding Rows}" FocusVisualStyle="{x:Null}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Padding="10,8" BorderThickness="0,0,0,1"
                                         BorderBrush="{DynamicResource PanelBorderBrush}">
                                     <Grid>
                                         <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
@@ -95,9 +98,9 @@
                                                   ToolTip="{Binding SelectToolTip}"
                                                   ToolTipService.ShowOnDisabled="True"/>
 
-                                        <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                                            <TextBlock Text="{Binding Path}" FontFamily="Consolas"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}"/>
+                                        <StackPanel Grid.Column="1" Margin="{Binding PathMargin}">
+                                            <TextBlock Text="{Binding DisplayPath}" FontFamily="Consolas"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayPath}"/>
                                             <TextBlock Text="{Binding Name}" FontSize="11.5"
                                                        TextTrimming="CharacterEllipsis"
                                                        Foreground="{DynamicResource MutedTextBrush}"/>
@@ -106,7 +109,7 @@
                                         <!-- Full row width, left-aligned with the path text -->
                                         <Expander Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
                                                   Header="Error details" FontWeight="SemiBold" FontSize="12"
-                                                  Margin="0,6,0,0"
+                                                  Margin="{Binding ErrorMargin}"
                                                   Style="{StaticResource SectionExpander}"
                                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
                                             <TextBox Text="{Binding Error, Mode=OneWay}" IsReadOnly="True"
@@ -117,6 +120,14 @@
                                                      Background="{DynamicResource WindowBackgroundBrush}"
                                                      Foreground="{DynamicResource WindowForegroundBrush}"/>
                                         </Expander>
+
+                                        <!-- Moved note: own row under State, Commits and URL; single line, full text in the tooltip -->
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="3" Margin="0,4,0,0"
+                                                   Text="{Binding MovedNoteText}" FontSize="11.5"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding MovedNoteText}"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   Visibility="{Binding ShowMovedNote, Converter={StaticResource BoolToVis}}"/>
 
                                         <StackPanel Grid.Column="2" Margin="0,0,12,0">
                                             <TextBlock Text="{Binding DisplayStateText}"
@@ -135,6 +146,9 @@
                                             <TextBlock FontFamily="Consolas" FontSize="12">
                                                 <Run Text="current " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding CurrentShortSha, Mode=OneWay}"/>
                                             </TextBlock>
+                                            <TextBlock Text="{Binding BranchLineText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Visibility="{Binding HasBranchLine, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="4">
@@ -170,6 +184,14 @@
                                                     <MenuItem Header="Clone manually…"
                                                               Visibility="{Binding CanCloneManually, Converter={StaticResource BoolToVis}}"
                                                               Command="{Binding PlacementTarget.Tag.CloneManuallyCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Switch branch…"
+                                                              Visibility="{Binding CanSwitchBranch, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.SwitchBranchCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Reset to recorded commit"
+                                                              Visibility="{Binding CanResetToRecorded, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.ResetToRecordedCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                               CommandParameter="{Binding}"/>
                                                 </ContextMenu>
                                             </Button.ContextMenu>
@@ -207,6 +229,9 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Content="Copy report" Width="110" Padding="10,5" Margin="0,0,8,0"
+                        ToolTip="Copies a plain-text list of the problem submodules, to send to the repository maintainer"
+                        Command="{Binding CopyReportCommand}"/>
                 <Button Content="Initialize selected" Style="{StaticResource AccentActionButton}"
                         Command="{Binding InitializeSelectedCommand}"/>
                 <Button Content="Cancel" Width="90" Padding="10,5" Margin="0,0,8,0"

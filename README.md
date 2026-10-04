@@ -187,6 +187,14 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 | **Cloned manually** (blue) | No `.gitmodules` entry, but the folder holds a repository (for example from **Clone manually…**). Git doesn't manage it as a submodule, so it can't be ticked for *Initialize*. |
 | **Not in your checkout** | Outside your selected folders; shown only with *Show submodules outside my checkout*. |
 
+### After cloning: the review bar
+
+If you run a script from the **Clone** tab and it finishes with exit code 2 (*checkout created, but some submodules failed*), a bar appears at the top of the window: *"Some submodules need attention in <folder>."* Click **Review submodules** to switch to the Manage tab, open that checkout and show the Submodules window with *Show only problems* ticked (for this opening only; your saved preference is unchanged). **Dismiss** hides the bar; it also disappears on the next *Execute* or when you open another checkout.
+
+### Nested submodules
+
+Submodules inside populated submodules (*Ready*, *On a different commit* or *Cloned manually*) are listed too, up to 5 levels deep. They appear as indented rows under their parent, with their path relative to the checkout (for example `external/lib/vendor/x`). Every row is handled on its own, inside the repository that contains it, so a nested problem can be initialized, given a URL or cloned manually like any other. A parent that isn't initialized has no children yet; after you initialize it, the refreshed list shows them. *Include nested submodules (--recursive)* still works as before.
+
 ### Initializing submodules
 
 1. Tick the submodules to initialize, or click **Select all with problems**.
@@ -207,6 +215,27 @@ Each row has a **⋯** menu (disabled while a run is active). **None of these ac
 - **Set URL…** (rows with a `.gitmodules` entry): pick a repository from your connected server, or paste a URL. The URL is checked first (`git ls-remote`); if it can't be reached the dialog stays open and shows Git's error. The URL is then stored in your checkout's local `.git/config` and the submodule is initialized with the current *Pinned/Latest* and *Nested* options. The row shows *URL overridden locally: …*.
 - **Reset URL** (only for overridden rows): removes the local override, so the row uses the URL from `.gitmodules` again.
 - **Clone manually…** (only for *Missing from .gitmodules* rows): clones the repository you choose into the (missing or empty) submodule folder and checks out the commit the main repository expects. The row becomes *Cloned manually*. If the clone fails, the folder is left empty as before. A non-empty folder is never touched.
+
+### Switching a submodule to a branch
+
+For submodules that are on disk (*Ready*, *On a different commit*, *Cloned manually*) the **⋯** menu also has:
+
+- **Switch branch…**: opens a list of the branches on the submodule's `origin` (loaded when the dialog opens; the current branch is highlighted, and you can filter). Pick one and click **Switch**. The app fetches that branch and checks it out: a new local branch that tracks `origin/<branch>`, or your existing local branch, fast-forwarded to origin. If your local branch has commits that aren't on origin, it is **left as it is** and the result says so. Nothing is ever discarded or overwritten.
+  - **Uncommitted changes block the switch.** The files are listed (first 50); commit or discard them in the submodule first.
+  - If the submodule is on a detached commit that belongs to no branch, you are asked to confirm, because that commit gets hard to find afterwards.
+- **Reset to recorded commit** (only when the submodule is not on the commit the main repository expects): detaches the submodule at that commit again, after the same uncommitted-changes check and a confirmation.
+
+Each row shows **on <branch>** or **detached** under its pinned/current commits. After a switch, a row on another commit says *"Moved from the recorded commit"*: the **main repository will show this submodule as changed**, and committing there would record the new commit for everyone. Use **Reset to recorded commit** to undo that. One submodule is handled at a time.
+
+### Copy report
+
+**Copy report** (bottom of the window, enabled when any row is *Missing from .gitmodules*, failed, has a locally overridden URL, or was cloned manually) copies a plain-text summary to the clipboard, ready to send to the repository maintainer: the repository, branch and commit, then up to three sections, each shown only if it has entries:
+
+- *Missing from .gitmodules*: paths that need an entry in the repository, with their pinned commit.
+- *Failed to initialize*: the URL and the first `fatal:`/`error:` line of Git's message.
+- *Fixed locally in this checkout*: URL overrides and manual clones that the repository itself still needs fixing for.
+
+Credentials embedded in URLs and token values are removed from the report. The window confirms with *"Report copied to the clipboard."*.
 
 ---
 

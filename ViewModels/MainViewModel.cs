@@ -1070,9 +1070,10 @@ namespace GitCheckoutManager.ViewModels
             var message = $"{(full ? "Full clone of" : "Clone")} {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
             if (newBranch != null) message += $"\nand create branch {newBranch}";
 
-            if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))
+            if (!_dialogService.ShowConfirmation("Execute Script", message + "?"))
                 return;
 
+            DismissSubmoduleBar();
             IsLoading = true;
             StatusMessage = "Executing script…";
 
@@ -1114,6 +1115,9 @@ namespace GitCheckoutManager.ViewModels
 
                         UpdateDestination();
                     }
+
+                    if (exitCode == 2 && Directory.Exists(targetPath))
+                        ShowSubmoduleBar(targetPath);
                 }
             }
             catch (Exception ex)
@@ -1149,15 +1153,51 @@ namespace GitCheckoutManager.ViewModels
             await OpenCheckoutAsync(root);
         }
 
+        // ── Post-clone bar: some submodules failed ────────────────────────────
+        [ObservableProperty] private bool _isSubmoduleBarVisible;
+        [ObservableProperty] private string _submoduleBarMessage = string.Empty;
+        private string? _submoduleBarPath;
+
+        private void ShowSubmoduleBar(string checkoutPath)
+        {
+            var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(checkoutPath));
+            _submoduleBarPath = checkoutPath;
+            SubmoduleBarMessage = $"Some submodules need attention in {name}.";
+            IsSubmoduleBarVisible = true;
+        }
+
+        [RelayCommand]
+        private void DismissSubmoduleBar()
+        {
+            IsSubmoduleBarVisible = false;
+            _submoduleBarPath = null;
+        }
+
+        [RelayCommand]
+        private async Task ReviewSubmodulesAsync()
+        {
+            var path = _submoduleBarPath;
+            DismissSubmoduleBar();
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            ActiveMode = AppMode.Manage;
+            await OpenCheckoutAsync(path);
+
+            if (CheckoutInfo != null)
+                await ShowSubmodulesCoreAsync(onlyProblems: true);
+        }
+
         [RelayCommand(CanExecute = nameof(HasCheckout))]
-        private async Task ShowSubmodulesAsync()
+        private Task ShowSubmodulesAsync() => ShowSubmodulesCoreAsync(onlyProblems: false);
+
+        private async Task ShowSubmodulesCoreAsync(bool onlyProblems)
         {
             var root = CheckoutInfo?.Root;
             if (string.IsNullOrWhiteSpace(root)) return;
 
             var vm = new SubmodulesViewModel(
                 _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService,
-                () => Repositories.ToList());
+                () => Repositories.ToList(), CheckoutInfo, _clipboardService.CopyText, onlyProblems);
             _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
             _dialogService.ShowSubmodules(vm);
 
@@ -1185,6 +1225,12 @@ namespace GitCheckoutManager.ViewModels
 
         public async Task OpenCheckoutAsync(string path)
         {
+            // Opening a different checkout makes the post-clone hint stale.
+            if (_submoduleBarPath != null &&
+                !string.Equals(Path.TrimEndingDirectorySeparator(path),
+                    Path.TrimEndingDirectorySeparator(_submoduleBarPath), StringComparison.OrdinalIgnoreCase))
+                DismissSubmoduleBar();
+
             // Reopening the same checkout (reload, retry, post-apply refresh) keeps the leftovers.
             if (!string.Equals(Path.TrimEndingDirectorySeparator(path),
                     Path.TrimEndingDirectorySeparator(CheckoutInfo?.Root ?? string.Empty),
@@ -1378,7 +1424,7 @@ namespace GitCheckoutManager.ViewModels
                 entry.IsMissing = true;
                 StatusMessage = $"This checkout no longer exists: {entry.Path}";
 
-                if (_dialogService.ShowConfirmation("Remove it from the recent list?", "Missing checkout"))
+                if (_dialogService.ShowConfirmation("Missing checkout", "Remove it from the recent list?"))
                     RemoveRecentCheckout(entry);
                 else
                     RebuildRecentCheckouts(selectPath: CheckoutInfo?.Root);
@@ -1508,8 +1554,8 @@ namespace GitCheckoutManager.ViewModels
                 if (review == null || !review.HasAnyFiles)
                 {
                     if (!_dialogService.ShowConfirmation(
-                            $"Add {added.Count} folder(s), remove {removed.Count} folder(s) from {root}?",
-                            "Apply sparse-checkout changes"))
+                            "Apply sparse-checkout changes",
+                            $"Add {added.Count} folder(s), remove {removed.Count} folder(s) from {root}?"))
                         return;
 
                     choices = new RemovalReviewChoices(false, false, false);
@@ -1524,9 +1570,10 @@ namespace GitCheckoutManager.ViewModels
                                   + (choices.DeleteChanged ? review.ChangedFiles.Count : 0);
 
                     if (permanent > 0 && !_dialogService.ShowConfirmation(
+                            "Confirm permanent deletion",
                             $"{permanent} changed/untracked file(s) in the removed folders will be permanently " +
                             "deleted from disk.\nThis cannot be undone. Continue?",
-                            "Confirm permanent deletion"))
+                            destructive: true))
                         return;
                 }
 
@@ -1655,7 +1702,7 @@ namespace GitCheckoutManager.ViewModels
             if (info == null || !info.IsSparse) return;
 
             if (!_dialogService.ShowConfirmation(
-                    "This checks out ALL files of the repository. Continue?", "Disable sparse checkout"))
+                    "Disable sparse checkout", "This checks out ALL files of the repository. Continue?"))
                 return;
 
             IsLoading = true;
@@ -1933,7 +1980,7 @@ namespace GitCheckoutManager.ViewModels
             var existing = AvailablePresets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
-                if (!_dialogService.ShowConfirmation($"Overwrite preset \"{existing.Name}\"?", "Overwrite Preset"))
+                if (!_dialogService.ShowConfirmation("Overwrite Preset", $"Overwrite preset \"{existing.Name}\"?"))
                     return;
                 existing.Paths = paths;
             }
@@ -1978,7 +2025,7 @@ namespace GitCheckoutManager.ViewModels
         private void DeletePreset()
         {
             if (SelectedPreset == null) return;
-            if (!_dialogService.ShowConfirmation($"Delete preset \"{SelectedPreset.Name}\"?", "Delete Preset"))
+            if (!_dialogService.ShowConfirmation("Delete Preset", $"Delete preset \"{SelectedPreset.Name}\"?", destructive: true))
                 return;
             var name = SelectedPreset.Name;
             AvailablePresets.Remove(SelectedPreset);

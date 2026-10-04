@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Windows;
 using GitCheckoutManager.Models;
 using GitCheckoutManager.Services;
 
@@ -21,6 +22,19 @@ namespace GitCheckoutManager.ViewModels
         }
 
         public string Path => Info.Path;
+
+        /// <summary>Path relative to the checkout root; differs from <see cref="Path"/> for nested submodules.</summary>
+        public string DisplayPath => Info.DisplayPath.Length > 0 ? Info.DisplayPath : Info.Path;
+
+        public int Depth => Info.Depth;
+
+        private const double IndentPerLevel = 18;
+
+        /// <summary>Margin of the path column: indents nested rows under their parent.</summary>
+        public Thickness PathMargin => new(Depth * IndentPerLevel, 0, 12, 0);
+
+        /// <summary>Margin of the error details, aligned with the path text.</summary>
+        public Thickness ErrorMargin => new(Depth * IndentPerLevel, 6, 0, 0);
         public string? Name => Info.Name;
         public string? Url => Info.Url;
 
@@ -77,7 +91,25 @@ namespace GitCheckoutManager.ViewModels
         public bool CanSetUrl => Info.Name != null && State != SubmoduleState.OutsideCheckout;
         public bool CanResetUrl => UrlOverridden;
         public bool CanCloneManually => State == SubmoduleState.MissingFromGitmodules;
-        public bool HasActions => CanSetUrl || CanResetUrl || CanCloneManually;
+
+        private bool IsPopulated => State is SubmoduleState.Ready or SubmoduleState.DifferentCommit or SubmoduleState.ManuallyCloned;
+
+        public bool CanSwitchBranch => IsPopulated;
+
+        public bool CanResetToRecorded =>
+            IsPopulated && !string.Equals(Info.CurrentSha, Info.PinnedSha, StringComparison.OrdinalIgnoreCase);
+
+        public bool HasActions => CanSetUrl || CanResetUrl || CanCloneManually || CanSwitchBranch || CanResetToRecorded;
+
+        /// <summary>"on main" or "detached"; empty for rows that are not populated.</summary>
+        public string BranchLineText => !IsPopulated ? string.Empty
+            : Info.CurrentBranch != null ? $"on {Info.CurrentBranch}" : "detached";
+
+        public bool HasBranchLine => BranchLineText.Length > 0;
+
+        public bool ShowMovedNote => State == SubmoduleState.DifferentCommit;
+
+        public string MovedNoteText => "Moved from the recorded commit — the main repo will show this submodule as changed.";
 
         /// <summary>Why the last action on this submodule failed. Empty until an action fills it.</summary>
         [ObservableProperty]
@@ -151,6 +183,8 @@ namespace GitCheckoutManager.ViewModels
         private readonly AppSettings _settings;
         private readonly ISettingsService _settingsService;
         private readonly Func<IReadOnlyList<Repository>> _getRepositories;
+        private readonly CheckoutInfo? _checkout;
+        private readonly Action<string>? _copyToClipboard;
         private readonly CancellationTokenSource _cts = new();
         private CancellationTokenSource? _runCts;
         private List<SubmoduleRowViewModel> _all = new();
@@ -161,8 +195,12 @@ namespace GitCheckoutManager.ViewModels
         public SubmodulesViewModel(ISubmoduleService submoduleService, string root,
             Func<string, GitAuth?> resolveAuth, IDialogService dialogService,
             AppSettings settings, ISettingsService settingsService,
-            Func<IReadOnlyList<Repository>>? getRepositories = null)
+            Func<IReadOnlyList<Repository>>? getRepositories = null,
+            CheckoutInfo? checkout = null, Action<string>? copyToClipboard = null,
+            bool forceShowOnlyProblems = false)
         {
+            _checkout = checkout;
+            _copyToClipboard = copyToClipboard;
             _getRepositories = getRepositories ?? (() => Array.Empty<Repository>());
             _submoduleService = submoduleService;
             _root = root;
@@ -174,7 +212,8 @@ namespace GitCheckoutManager.ViewModels
             // Backing fields: restoring the saved choice must not write the settings file again.
             _latestFromBranch = settings.SubmoduleLatestFromBranch;
             _includeNested = settings.SubmoduleIncludeNested;
-            _showOnlyProblems = settings.SubmodulesShowOnlyProblems;
+            // Forced for this opening only: the backing field is set, so the saved preference is not touched.
+            _showOnlyProblems = forceShowOnlyProblems || settings.SubmodulesShowOnlyProblems;
         }
 
         public ObservableCollection<SubmoduleRowViewModel> Rows { get; } = new();
@@ -193,6 +232,8 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(SetUrlCommand))]
         [NotifyCanExecuteChangedFor(nameof(ResetUrlCommand))]
         [NotifyCanExecuteChangedFor(nameof(CloneManuallyCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SwitchBranchCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ResetToRecordedCommand))]
         private bool _isRunning;
 
         /// <summary>No run is active; the options, Refresh and Close are available.</summary>
@@ -299,7 +340,8 @@ namespace GitCheckoutManager.ViewModels
         private SubmoduleRowViewModel CreateRow(SubmoduleInfo info)
         {
             var row = new SubmoduleRowViewModel(info) { IsLocked = IsRunning };
-            if (_errors.TryGetValue(info.Path, out var error)) row.Error = error;
+            var key = info.DisplayPath.Length > 0 ? info.DisplayPath : info.Path;
+            if (_errors.TryGetValue(key, out var error)) row.Error = error;
 
             row.PropertyChanged += (_, e) =>
             {
@@ -307,6 +349,9 @@ namespace GitCheckoutManager.ViewModels
                     e.PropertyName == nameof(SubmoduleRowViewModel.IsSelected) ||
                     e.PropertyName == nameof(SubmoduleRowViewModel.CanSelect))
                     InitializeSelectedCommand.NotifyCanExecuteChanged();
+
+                if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SubmoduleRowViewModel.Error))
+                    CopyReportCommand.NotifyCanExecuteChanged();
             };
             return row;
         }
@@ -330,9 +375,12 @@ namespace GitCheckoutManager.ViewModels
         partial void OnIsBusyChanged(bool value)
         {
             InitializeSelectedCommand.NotifyCanExecuteChanged();
+            CopyReportCommand.NotifyCanExecuteChanged();
             SetUrlCommand.NotifyCanExecuteChanged();
             ResetUrlCommand.NotifyCanExecuteChanged();
             CloneManuallyCommand.NotifyCanExecuteChanged();
+            SwitchBranchCommand.NotifyCanExecuteChanged();
+            ResetToRecordedCommand.NotifyCanExecuteChanged();
         }
 
         /// <summary>
@@ -362,6 +410,7 @@ namespace GitCheckoutManager.ViewModels
 
             var succeeded = new List<string>();
             var failed = new List<string>();
+            var skipped = new List<string>();
             var cancelled = false;
 
             try
@@ -373,7 +422,21 @@ namespace GitCheckoutManager.ViewModels
                     GitResult result;
                     try
                     {
-                        result = await _submoduleService.InitAndUpdateAsync(_root, row.Info, latest, nested, _resolveAuth, ct);
+                        // A populated row is about to be moved, so it gets the same safety rules as Switch branch.
+                        var refusal = await CheckBeforeUpdateAsync(row, latest, ct);
+                        if (refusal != null)
+                        {
+                            if (refusal.ExitCode == 0)
+                            {
+                                skipped.Add(row.DisplayPath);
+                                continue;
+                            }
+                            result = refusal;
+                        }
+                        else
+                        {
+                            result = await _submoduleService.InitAndUpdateAsync(row.Info.RepoRoot, row.Info, latest, nested, _resolveAuth, ct);
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -392,13 +455,14 @@ namespace GitCheckoutManager.ViewModels
                     if (result.ExitCode == 0)
                     {
                         row.Error = string.Empty;
-                        _errors.Remove(row.Path);
-                        succeeded.Add(row.Path);
+                        _errors.Remove(row.DisplayPath);
+                        succeeded.Add(row.DisplayPath);
 
                         // Show the real state now instead of waiting for the end-of-run reload.
                         try
                         {
-                            var fresh = await _submoduleService.GetAsync(_root, row.Path, ct);
+                            var fresh = await _submoduleService.GetAsync(
+                                row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
                             if (fresh != null) row.UpdateInfo(fresh);
                         }
                         catch (OperationCanceledException)
@@ -413,20 +477,20 @@ namespace GitCheckoutManager.ViewModels
                     }
                     else
                     {
-                        row.Error = _errors[row.Path] = TailOf(result);
-                        failed.Add(row.Path);
+                        row.Error = _errors[row.DisplayPath] = result.ExitCode == DirtyExitCode ? result.StdErr : TailOf(result);
+                        failed.Add(row.DisplayPath);
                     }
                 }
 
                 // Rows that did not succeed keep their tick, so the user can simply run again.
-                var stillSelected = targets.Select(r => r.Path).Except(succeeded).ToHashSet(StringComparer.Ordinal);
+                var stillSelected = targets.Select(r => r.DisplayPath).Except(succeeded).ToHashSet(StringComparer.Ordinal);
 
                 await LoadAsync();
 
-                foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.Path)))
+                foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
                     row.IsSelected = true;
 
-                ResultText = BuildResultText(succeeded.Count, targets.Count, failed, cancelled);
+                ResultText = BuildResultText(succeeded.Count, targets.Count, failed, skipped, cancelled);
             }
             finally
             {
@@ -437,6 +501,47 @@ namespace GitCheckoutManager.ViewModels
                 foreach (var row in _all) row.IsLocked = false;
                 IsRunning = false;
             }
+        }
+
+        /// <summary>Marks a refusal in <see cref="GitResult.ExitCode"/>; its StdErr is the row's error text.</summary>
+        private const int DirtyExitCode = 3;
+
+        /// <summary>
+        /// Safety check for a row that is already on disk and is about to be moved (a different commit, or
+        /// "latest from branch"). Returns null to go ahead, an exit-code-0 result to skip the row quietly
+        /// (the user declined), or a failure to record on the row. Missing submodules have nothing to lose.
+        /// </summary>
+        private async Task<GitResult?> CheckBeforeUpdateAsync(SubmoduleRowViewModel row, bool latest, CancellationToken ct)
+        {
+            var populated = row.State == SubmoduleState.DifferentCommit ||
+                            (row.State == SubmoduleState.Ready && latest);
+            if (!populated) return null;
+
+            SwitchCheck check;
+            try
+            {
+                check = await _submoduleService.CheckSwitchSafetyAsync(row.Info, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new GitResult(-1, string.Empty, ex.Message);
+            }
+
+            if (check.IsDirty)
+            {
+                var files = check.DirtyFiles.Take(MaxListedFiles);
+                var text = $"Uncommitted changes in {row.DisplayPath} — commit or discard them first." +
+                           Environment.NewLine + string.Join(Environment.NewLine, files);
+                return new GitResult(DirtyExitCode, string.Empty, text);
+            }
+
+            if (check.UnreferencedCommits && !_dialogService.ShowConfirmation(
+                    "Initialize selected",
+                    $"The current commit in {row.DisplayPath} isn't on any branch. Updating will leave it behind. Continue?",
+                    destructive: true))
+                return new GitResult(0, string.Empty, string.Empty);
+
+            return null;
         }
 
         // -- Row actions: fix a broken submodule for this checkout only ----------
@@ -456,17 +561,17 @@ namespace GitCheckoutManager.ViewModels
             if (url == null) return;
 
             await RunRowActionAsync(row, "Set URL for",
-                ct => _submoduleService.SetUrlAndInitAsync(_root, row.Info, url, latest, nested, _resolveAuth, ct));
+                ct => _submoduleService.SetUrlAndInitAsync(row.Info.RepoRoot, row.Info, url, latest, nested, _resolveAuth, ct));
         }
 
         [RelayCommand(CanExecute = nameof(CanRowAction))]
         private async Task ResetUrlAsync(SubmoduleRowViewModel? row)
         {
             if (row == null) return;
-            if (!_dialogService.ShowConfirmation("Use the URL from .gitmodules again?", "Reset URL")) return;
+            if (!_dialogService.ShowConfirmation("Reset URL", "Use the URL from .gitmodules again?")) return;
 
             await RunRowActionAsync(row, "Reset URL for",
-                ct => _submoduleService.ResetUrlAsync(_root, row.Info, ct));
+                ct => _submoduleService.ResetUrlAsync(row.Info.RepoRoot, row.Info, ct));
         }
 
         [RelayCommand(CanExecute = nameof(CanRowAction))]
@@ -475,27 +580,109 @@ namespace GitCheckoutManager.ViewModels
             if (row == null) return;
 
             if (!_dialogService.ShowConfirmation(
-                    $"This repository has no .gitmodules entry for {row.Path}. The app will clone the repository " +
+                    "Clone manually",
+                    $"This repository has no .gitmodules entry for {row.DisplayPath}. The app will clone the repository " +
                     $"you choose into that folder at the commit the main repo expects ({row.PinnedShortSha}). " +
-                    "Git won't treat it as a registered submodule.",
-                    "Clone manually"))
+                    "Git won't treat it as a registered submodule."))
                 return;
 
             var url = PickUrl(row);
             if (url == null) return;
 
             await RunRowActionAsync(row, "Cloned",
-                ct => _submoduleService.CloneManuallyAsync(_root, row.Info, url, _resolveAuth, ct));
+                ct => _submoduleService.CloneManuallyAsync(row.Info.RepoRoot, row.Info, url, _resolveAuth, ct));
+        }
+
+        private const int MaxListedFiles = 50;
+
+        [RelayCommand(CanExecute = nameof(CanRowAction))]
+        private async Task SwitchBranchAsync(SubmoduleRowViewModel? row)
+        {
+            if (row == null) return;
+
+            var check = await CheckSafetyAsync(row);
+            if (check == null) return;
+
+            var branch = _dialogService.ShowSubmoduleBranch(new SubmoduleBranchModel
+            {
+                DisplayPath = row.DisplayPath,
+                CurrentBranch = row.Info.CurrentBranch,
+                LoadBranchesAsync = ct => _submoduleService.ListRemoteBranchesAsync(row.Info, _resolveAuth, ct)
+            });
+            if (branch == null) return;
+
+            if (check.UnreferencedCommits && !_dialogService.ShowConfirmation(
+                    "Switch branch",
+                    $"The current commit in {row.DisplayPath} isn't on any branch. After switching it will be hard to find. Continue?"))
+                return;
+
+            await RunRowActionAsync(row, "Switched",
+                ct => _submoduleService.SwitchBranchAsync(row.Info, branch, _resolveAuth, ct),
+                showNote: true);
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRowAction))]
+        private async Task ResetToRecordedAsync(SubmoduleRowViewModel? row)
+        {
+            if (row == null) return;
+
+            if (await CheckSafetyAsync(row) == null) return;
+
+            if (!_dialogService.ShowConfirmation(
+                    "Reset to recorded commit",
+                    $"Move {row.DisplayPath} back to {row.PinnedShortSha}, the commit the main repo expects?",
+                    destructive: true))
+                return;
+
+            await RunRowActionAsync(row, "Reset", ct => _submoduleService.ResetToRecordedAsync(row.Info, ct));
+        }
+
+        /// <summary>
+        /// Runs the safety check. Returns null (after telling the user why) when the folder has uncommitted
+        /// changes or the check itself failed; the switch is never attempted then.
+        /// </summary>
+        private async Task<SwitchCheck?> CheckSafetyAsync(SubmoduleRowViewModel row)
+        {
+            IsBusy = true;
+            try
+            {
+                var check = await _submoduleService.CheckSwitchSafetyAsync(row.Info, _cts.Token);
+                if (!check.IsDirty) return check;
+
+                var shown = check.DirtyFiles.Take(MaxListedFiles).ToList();
+                var more = check.DirtyFiles.Count - shown.Count;
+                var list = string.Join(Environment.NewLine, shown) +
+                           (more > 0 ? $"{Environment.NewLine}…and {more} more" : string.Empty);
+
+                _dialogService.ShowMessage(
+                    "Uncommitted changes",
+                    $"Commit or discard these changes in {row.DisplayPath} first.",
+                    list);
+                return null;
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                row.Error = _errors[row.DisplayPath] = ex.Message;
+                return null;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
         }
 
         private bool ConfirmLatest() => _dialogService.ShowConfirmation(
+            "Latest from branch",
             "Latest from branch moves submodules away from the commit the main repo expects. " +
-            "The main repo will then show them as changed. Continue?",
-            "Latest from branch");
+            "The main repo will then show them as changed. Continue?");
 
         private string? PickUrl(SubmoduleRowViewModel row) => _dialogService.ShowSubmoduleUrl(new SubmoduleUrlModel
         {
-            Path = row.Path,
+            Path = row.DisplayPath,
             GitmodulesUrl = row.Url,
             Repositories = _getRepositories(),
             TestUrlAsync = async (url, ct) =>
@@ -507,7 +694,7 @@ namespace GitCheckoutManager.ViewModels
 
         /// <summary>Runs one action on one row with the same live states as an initialize run (Working... then the result).</summary>
         private async Task RunRowActionAsync(SubmoduleRowViewModel row, string verb,
-            Func<CancellationToken, Task<GitResult>> action)
+            Func<CancellationToken, Task<GitResult>> action, bool showNote = false)
         {
             IsRunning = true;
             HasInitialized = true;
@@ -516,7 +703,7 @@ namespace GitCheckoutManager.ViewModels
 
             _runCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             var ct = _runCts.Token;
-            var path = row.Path;
+            var path = row.DisplayPath;
 
             try
             {
@@ -546,6 +733,8 @@ namespace GitCheckoutManager.ViewModels
                     row.Error = string.Empty;
                     _errors.Remove(path);
                     ResultText = $"{verb} {path}: done.";
+                    var note = showNote ? FirstErrorLine(result, fallback: string.Empty) : string.Empty;
+                    if (note.Length > 0) ResultText += $" {note}";
                 }
                 else
                 {
@@ -564,19 +753,47 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
-        private static string FirstErrorLine(GitResult result) =>
+        private static string FirstErrorLine(GitResult result, string? fallback = null) =>
             (string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr)
                 .Split('\n')
                 .Select(l => l.Trim())
-                .FirstOrDefault(l => l.Length > 0) ?? $"git exited with code {result.ExitCode}.";
+                .FirstOrDefault(l => l.Length > 0) ?? fallback ?? $"git exited with code {result.ExitCode}.";
+
+        // -- Copy report -----------------------------------------------------------
+
+        private List<SubmoduleReportItem> ReportItems() => _all
+            .Select(r => new SubmoduleReportItem(r.Info, r.HasError ? r.Error : null))
+            .Where(SubmoduleReportBuilder.IsReportable)
+            .ToList();
+
+        private bool CanCopyReport() => !IsBusy && _copyToClipboard != null && ReportItems().Count > 0;
+
+        [RelayCommand(CanExecute = nameof(CanCopyReport))]
+        private void CopyReport()
+        {
+            var report = SubmoduleReportBuilder.Build(
+                _checkout?.RemoteUrl, _checkout?.Branch, _checkout?.HeadSha, AppVersion.Current,
+                DateTime.Now, ReportItems());
+
+            try
+            {
+                _copyToClipboard!(report);
+                ResultText = "Report copied to the clipboard.";
+            }
+            catch (Exception ex)
+            {
+                ResultText = $"Could not copy the report: {ex.Message}";
+            }
+        }
 
         [RelayCommand(CanExecute = nameof(IsRunning))]
         private void CancelRun() => _runCts?.Cancel();
 
-        private static string BuildResultText(int succeeded, int total, List<string> failed, bool cancelled)
+        private static string BuildResultText(int succeeded, int total, List<string> failed, List<string> skipped, bool cancelled)
         {
             var text = $"Initialized {succeeded} of {total}.";
             if (failed.Count > 0) text += $" {failed.Count} failed: {string.Join(", ", failed)}";
+            if (skipped.Count > 0) text += $" {skipped.Count} skipped: {string.Join(", ", skipped)}";
             if (cancelled) text += " Cancelled.";
             return text;
         }
@@ -613,6 +830,7 @@ namespace GitCheckoutManager.ViewModels
 
             SummaryText = BuildSummary();
             InitializeSelectedCommand.NotifyCanExecuteChanged();
+            CopyReportCommand.NotifyCanExecuteChanged();
 
             EmptyText = Rows.Count > 0 ? string.Empty
                 : _all.Count == 0 ? "This checkout has no submodules."

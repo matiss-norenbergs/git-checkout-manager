@@ -22,14 +22,20 @@
                                           TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsEnabled" Value="True"/>
+                            </MultiTrigger.Conditions>
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
-                        </Trigger>
+                        </MultiTrigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlPressedBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                            <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -173,7 +179,8 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="2"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center"
+                        <ContentPresenter x:Name="Content"
+                                          HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
                                           RecognizesAccessKey="True"
                                           TextElement.Foreground="{DynamicResource OnAccentBrush}">
@@ -182,13 +189,24 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Style.Triggers>
+                                        <!-- Light text on the neutral disabled background would be unreadable -->
+                                        <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=Button}}" Value="False">
+                                            <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
                                 </Style>
                             </ContentPresenter.Resources>
                         </ContentPresenter>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Bd" Property="Opacity" Value="0.6"/>
+                            <!-- A disabled coloured button must not still look like a primary action -->
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlBackgroundBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource DisabledControlBorderBrush}"/>
+                            <Setter TargetName="Content" Property="TextElement.Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                            <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -199,6 +217,11 @@
     <Style x:Key="AccentActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+    </Style>
+
+    <Style x:Key="DangerActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
+        <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
     </Style>
 
     <!-- Section expander (Script panel, error details): small triangle plus text header. The triangle points the way the content will open: set ExpandDirection="Up" for a panel that grows upward (Script), leave it at Down otherwise. -->

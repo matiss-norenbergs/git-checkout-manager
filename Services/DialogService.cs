@@ -38,9 +38,19 @@ namespace GitCheckoutManager.Services
             return dialog.ShowDialog() == true ? dialog.FolderName : null;
         }
 
-        public bool ShowConfirmation(string message, string title) =>
-            MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning)
-            == MessageBoxResult.Yes;
+        public bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false) =>
+            ShowMessageWindow(title, message, details, confirm: true, destructive);
+
+        public void ShowMessage(string title, string message, string? details = null) =>
+            ShowMessageWindow(title, message, details, confirm: false, destructive: false);
+
+        private static bool ShowMessageWindow(string title, string message, string? details, bool confirm, bool destructive)
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            var window = new MessageWindow(title, message, details, confirm, destructive) { Owner = owner };
+            return window.ShowDialog() == true;
+        }
 
         public RemovalReviewChoices? ShowRemovalReview(RemovalReviewModel model)
         {
@@ -67,6 +77,14 @@ namespace GitCheckoutManager.Services
                         ?? Application.Current?.MainWindow;
             var window = new SubmoduleUrlWindow(model) { Owner = owner };
             return window.ShowDialog() == true ? window.ChosenUrl : null;
+        }
+
+        public string? ShowSubmoduleBranch(SubmoduleBranchModel model)
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            var window = new SubmoduleBranchWindow(model) { Owner = owner };
+            return window.ShowDialog() == true ? window.ChosenBranch : null;
         }
 
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")
