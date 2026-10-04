@@ -29,7 +29,17 @@ namespace GitCheckoutManager.ViewModels
 
         private IGitHostService _hostService;
         private AppSettings _appSettings;
-        private List<TreeNodeViewModel> _allRootNodes = new();
+        // Clone and Manage each keep their own tree; _allRootNodes always means the active tab's roots.
+        private readonly TreeTabs _tabs = new();
+        private bool _switchingTab;
+
+        private TreeState ActiveTree => _tabs.For(ActiveMode);
+
+        private List<TreeNodeViewModel> _allRootNodes
+        {
+            get => ActiveTree.Roots;
+            set => ActiveTree.Roots = value;
+        }
         private bool _suppressHostSync;
         private CancellationTokenSource? _treeLoadCts;
 
@@ -355,8 +365,9 @@ namespace GitCheckoutManager.ViewModels
                 IsConnected = false;
                 Repositories.Clear();
                 Branches.Clear();
-                TreeNodes.Clear();
-                _allRootNodes.Clear();
+                _tabs.Clone.Clear();
+                if (IsCloneMode)
+                    TreeNodes = new ObservableCollection<TreeNodeViewModel>();
                 SelectedPathsText = string.Empty;
                 ScheduleRegenerate();
                 StatusMessage = $"Enter your {newValue} server URL and Personal Access Token, then click Connect.";
@@ -591,34 +602,74 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnActiveModeChanged(AppMode value)
         {
+            // A pending search debounce belongs to the tab being left.
+            _searchCts?.Cancel();
+            _tabs.Leave(value == AppMode.Manage ? AppMode.Clone : AppMode.Manage, SearchFilter);
+
+            var entering = ActiveTree;
+            _switchingTab = true;
+            try { SearchFilter = entering.SearchText; }
+            finally { _switchingTab = false; }
+
             if (value == AppMode.Manage)
             {
                 _treeLoadCts?.Cancel();
-                TreeNodes.Clear();
-                _allRootNodes.Clear();
+                ShowActiveTree();
 
                 RefreshRecentCheckoutState();
-                var mostRecent = RecentCheckouts.FirstOrDefault(r => !r.IsMissing);
-                if (mostRecent != null)
+                if (_tabs.EnterManage(_activeCheckoutPath != null) == ManageSwitchAction.ShowAsIs)
                 {
-                    SelectedRecentCheckout = mostRecent;
-                    _ = OpenCheckoutAsync(mostRecent.Path);
+                    if (!string.IsNullOrEmpty(entering.StatusMessage))
+                        StatusMessage = entering.StatusMessage;
                 }
                 else
                 {
-                    StatusMessage = "Click Browse\u2026 to open a Git checkout.";
+                    var mostRecent = RecentCheckouts.FirstOrDefault(r => !r.IsMissing);
+                    if (mostRecent != null)
+                    {
+                        SelectedRecentCheckout = mostRecent;
+                        _ = OpenCheckoutAsync(mostRecent.Path);
+                    }
+                    else
+                    {
+                        StatusMessage = "Click Browse\u2026 to open a Git checkout.";
+                    }
                 }
             }
             else
             {
-                StatusMessage = "Select a repository and branch. The tree loads automatically.";
-                _ = LoadRemoteTreeAsync();
+                var action = _tabs.EnterClone(SelectedRepository?.HttpUrlToRepo, SelectedBranch?.Name);
+                ShowActiveTree();
+
+                if (action == CloneSwitchAction.ShowAsIs && !string.IsNullOrEmpty(entering.StatusMessage))
+                {
+                    StatusMessage = entering.StatusMessage;
+                }
+                else
+                {
+                    StatusMessage = "Select a repository and branch. The tree loads automatically.";
+                    if (action == CloneSwitchAction.Load)
+                        _ = LoadRemoteTreeAsync();
+                }
             }
 
             RegenerateScript();
         }
 
-        partial void OnSearchFilterChanged(string value) => DebounceApplyFilter(value);
+        /// <summary>Binds the tree control and the presets to the active tab's state.</summary>
+        private void ShowActiveTree()
+        {
+            TreeNodes = new ObservableCollection<TreeNodeViewModel>(ActiveTree.Roots);
+            ApplyFilter(SearchFilter);
+            LoadPresetsForCurrentScan();
+            SavePresetCommand.NotifyCanExecuteChanged();
+        }
+
+        partial void OnSearchFilterChanged(string value)
+        {
+            if (_switchingTab) return;
+            DebounceApplyFilter(value);
+        }
 
         partial void OnBranchFilterTextChanged(string value)
         {
@@ -719,9 +770,10 @@ namespace GitCheckoutManager.ViewModels
             StatusMessage = "Loading branches…";
             BranchFilterText = string.Empty;
             Branches.Clear();
-            TreeNodes.Clear();
             // Drop the previous repository's nodes so its selection cannot leak into the new tree
-            _allRootNodes.Clear();
+            _tabs.Clone.Clear();
+            if (IsCloneMode)
+                TreeNodes = new ObservableCollection<TreeNodeViewModel>();
             SelectedPathsText = string.Empty;
             ScheduleRegenerate();
 
@@ -752,13 +804,17 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
-        private async Task ApplyFlatNodesAsync(List<TreeNode> flatNodes)
+        private async Task ApplyFlatNodesAsync(TreeState target, List<TreeNode> flatNodes)
         {
             var roots = await Task.Run(() => BuildTree(flatNodes));
-            _allRootNodes = roots;
-            TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
+            target.Roots = roots;
             // The snapshot belongs to the old nodes; start fresh and re-apply any active search
-            _expansionSnapshot = null;
+            target.ExpansionSnapshot = null;
+
+            // The user may have switched tabs while this was building; then the nodes wait in their own state.
+            if (!ReferenceEquals(target, ActiveTree)) return;
+
+            TreeNodes = new ObservableCollection<TreeNodeViewModel>(roots);
             ApplyFilter(SearchFilter);
             ScheduleRegenerate();
         }
@@ -776,10 +832,12 @@ namespace GitCheckoutManager.ViewModels
             var cts = new CancellationTokenSource();
             _treeLoadCts = cts;
 
-            var previous = GetSelectedPaths();
             var repoName = SelectedRepository.Name;
             var repoUrl = SelectedRepository.HttpUrlToRepo;
             var branchName = SelectedBranch.Name;
+
+            // Ticks carry over only within the same repository, and never from Manage.
+            var previous = _tabs.PreviousCloneSelection(repoUrl);
 
             try
             {
@@ -797,14 +855,19 @@ namespace GitCheckoutManager.ViewModels
                 cts.Token.ThrowIfCancellationRequested();
 
                 // The whole tree is in memory, so no lazy loading is needed.
-                await ApplyFlatNodesAsync(result.Nodes);
+                await ApplyFlatNodesAsync(_tabs.Clone, result.Nodes);
+                _tabs.Clone.Key = TreeState.CloneKey(repoUrl, branchName);
+                _tabs.Clone.RepoUrl = repoUrl;
 
                 // Keep whatever selection still exists on the new branch.
                 if (previous.Count > 0)
-                    ApplyPresetToTree(previous);
+                    ApplyPresetToTree(previous, _tabs.Clone.Roots);
 
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
+                if (IsCloneMode)
+                {
+                    LoadPresetsForCurrentScan();
+                    SavePresetCommand.NotifyCanExecuteChanged();
+                }
 
                 var shortSha = result.CommitSha.Length >= 8 ? result.CommitSha[..8] : result.CommitSha;
                 var message = $"Tree loaded: {result.Nodes.Count} items at {shortSha}";
@@ -812,7 +875,9 @@ namespace GitCheckoutManager.ViewModels
                     message += $", {result.SubmoduleCount} submodule(s)";
                 if (result.FilterIgnored)
                     message += ". Warning: the server ignored the blob filter, so file contents were downloaded";
-                StatusMessage = message;
+                _tabs.Clone.StatusMessage = message;
+                if (IsCloneMode)
+                    StatusMessage = message;
             }
             catch (OperationCanceledException)
             {
@@ -1245,7 +1310,9 @@ namespace GitCheckoutManager.ViewModels
             {
                 var info = await _checkoutService.OpenAsync(path);
                 var nodes = await _checkoutService.GetTreeAsync(info.Root);
-                await ApplyFlatNodesAsync(nodes);
+                var manage = _tabs.Manage;
+                await ApplyFlatNodesAsync(manage, nodes);
+                manage.Key = TreeState.ManageKey(info.Root, info.HeadSha);
 
                 CheckoutInfo = info;
                 _checkoutSummarySuffix = string.Empty;
@@ -1253,10 +1320,10 @@ namespace GitCheckoutManager.ViewModels
                 if (!info.IsSparse)
                 {
                     // Everything is on disk today, so the current state is "all root folders".
-                    foreach (var root in _allRootNodes.Where(n => n.IsFolder))
+                    foreach (var root in manage.Roots.Where(n => n.IsFolder))
                         root.IsChecked = true;
 
-                    _baselinePaths = _allRootNodes
+                    _baselinePaths = manage.Roots
                         .Where(n => n.IsFolder)
                         .Select(n => n.FullPath)
                         .ToList();
@@ -1271,21 +1338,26 @@ namespace GitCheckoutManager.ViewModels
                 }
                 else
                 {
-                    var skippedFiles = ApplySparseCheckoutState(info.SparsePaths);
-                    _baselinePaths = DropFilePaths(info.SparsePaths, out _);
+                    var skippedFiles = ApplySparseCheckoutState(info.SparsePaths, manage.Roots);
+                    _baselinePaths = DropFilePaths(info.SparsePaths, out _, manage.Roots);
 
                     if (skippedFiles > 0)
                         _checkoutSummarySuffix =
                             $" · {skippedFiles} file path(s) in the sparse list are ignored; only folders can be selected.";
                 }
 
-                RecomputePendingChanges();
-                LoadPresetsForCurrentScan();
-                SavePresetCommand.NotifyCanExecuteChanged();
+                if (IsManageMode)
+                {
+                    RecomputePendingChanges();
+                    LoadPresetsForCurrentScan();
+                    SavePresetCommand.NotifyCanExecuteChanged();
+                }
                 AddOrUpdateRecentCheckout(info.Root, info.RemoteUrl, info.Branch);
 
                 _activeCheckoutPath = info.Root;
-                StatusMessage = $"Checkout opened: {info.Root}";
+                manage.StatusMessage = $"Checkout opened: {info.Root}";
+                if (IsManageMode)
+                    StatusMessage = manage.StatusMessage;
             }
             catch (Exception ex)
             {
@@ -2122,17 +2194,15 @@ namespace GitCheckoutManager.ViewModels
         [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
         private static extern int StrCmpLogicalW(string left, string right);
 
-        private List<string> GetSelectedPaths()
-        {
-            var paths = new List<string>();
-            foreach (var node in _allRootNodes)
-                paths.AddRange(node.GetCheckedPaths());
-            return paths;
-        }
+        private List<string> GetSelectedPaths() => ActiveTree.GetCheckedPaths();
 
         private const int SearchDebounceMs = 250;
         private CancellationTokenSource? _searchCts;
-        private Dictionary<TreeNodeViewModel, bool>? _expansionSnapshot;
+        private Dictionary<TreeNodeViewModel, bool>? _expansionSnapshot
+        {
+            get => ActiveTree.ExpansionSnapshot;
+            set => ActiveTree.ExpansionSnapshot = value;
+        }
 
         private async void DebounceApplyFilter(string filter)
         {
@@ -2183,13 +2253,14 @@ namespace GitCheckoutManager.ViewModels
                 AvailablePresets.Add(p);
         }
 
-        private (int Matched, int SkippedFiles) ApplyPresetToTree(List<string> paths)
+        private (int Matched, int SkippedFiles) ApplyPresetToTree(List<string> paths, List<TreeNodeViewModel>? roots = null)
         {
-            foreach (var root in _allRootNodes)
+            roots ??= _allRootNodes;
+            foreach (var root in roots)
                 root.IsChecked = false;
 
             var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
-            BuildFlatPathMap(_allRootNodes, map);
+            BuildFlatPathMap(roots, map);
 
             var matched = 0;
             var skippedFiles = 0;
@@ -2217,11 +2288,11 @@ namespace GitCheckoutManager.ViewModels
         }
 
         /// <summary>Checks the tree to match a sparse list, returning how many entries were files.</summary>
-        private int ApplySparseCheckoutState(List<string> checkedPaths)
+        private int ApplySparseCheckoutState(List<string> checkedPaths, List<TreeNodeViewModel> roots)
         {
             var pathSet = new HashSet<string>(checkedPaths, StringComparer.Ordinal);
             var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
-            BuildFlatPathMap(_allRootNodes, map);
+            BuildFlatPathMap(roots, map);
 
             var skippedFiles = 0;
             foreach (var (path, vm) in map)
@@ -2244,10 +2315,10 @@ namespace GitCheckoutManager.ViewModels
         /// Drops paths that resolve to a file in the current tree. Cone mode only accepts folders and
         /// fails the whole command with "is not a directory" on the first file it sees.
         /// </summary>
-        private List<string> DropFilePaths(IEnumerable<string> paths, out List<string> dropped)
+        private List<string> DropFilePaths(IEnumerable<string> paths, out List<string> dropped, List<TreeNodeViewModel>? roots = null)
         {
             var map = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
-            BuildFlatPathMap(_allRootNodes, map);
+            BuildFlatPathMap(roots ?? _allRootNodes, map);
 
             var kept = new List<string>();
             dropped = new List<string>();
