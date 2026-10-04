@@ -114,6 +114,69 @@ public class SubmoduleReportBuilderTests
         Assert.Contains("using https://example.com/b.git", text);
     }
 
+    private static string Failed(string url, string? error) =>
+        Build(new SubmoduleReportItem(Sub("a", SubmoduleState.NotInitialized, url), error));
+
+    [Theory]
+    [InlineData("https://h/x.git?private_token=glpat-abc")]
+    [InlineData("https://h/x.git?access_token=glpat-abc")]
+    [InlineData("https://h/x.git?ref=main&oauth_token=glpat-abc&x=1")]
+    [InlineData("https://h/x.git?mytoken=glpat-abc")]
+    public void Token_query_parameters_are_removed_from_urls(string url)
+    {
+        var text = Failed(url, "fatal: nope");
+
+        Assert.DoesNotContain("glpat", text);
+        Assert.Contains("token=[removed]", text);
+    }
+
+    [Fact]
+    public void Query_parameters_next_to_a_removed_token_are_kept()
+    {
+        var text = Failed("https://h/x.git?ref=main&private_token=glpat-abc&x=1", null);
+
+        Assert.Contains("https://h/x.git?ref=main&private_token=[removed]&x=1", text);
+    }
+
+    [Fact]
+    public void Token_in_a_url_inside_an_error_message_is_removed()
+    {
+        var text = Failed("../a.git",
+            "fatal: unable to access 'https://h/x.git/?private_token=glpat-abc': denied");
+
+        Assert.DoesNotContain("glpat", text);
+        Assert.Contains("denied", text);
+    }
+
+    [Fact]
+    public void Authentication_failed_message_with_user_info_is_cleaned()
+    {
+        var text = Failed("../a.git", "fatal: Authentication failed for 'https://oauth2:glpat-abc@h/x.git'");
+
+        Assert.DoesNotContain("glpat", text);
+        Assert.DoesNotContain("oauth2", text);
+        Assert.Contains("fatal: Authentication failed for 'https://h/x.git'", text);
+    }
+
+    [Fact]
+    public void An_ordinary_message_that_mentions_a_token_is_kept()
+    {
+        var text = Failed("../a.git", "fatal: invalid token: bad credentials");
+
+        Assert.Contains("invalid token: bad credentials", text);
+    }
+
+    [Fact]
+    public void Header_values_stop_at_the_end_of_the_line_or_the_next_quote()
+    {
+        var text = Failed("../a.git", "fatal: sent 'PRIVATE-TOKEN: glpat-abc' but the server said no");
+        Assert.DoesNotContain("glpat", text);
+        Assert.Contains("PRIVATE-TOKEN: [removed]' but the server said no", text);
+
+        var line = SubmoduleReportBuilder.FirstErrorLine("error: Authorization: Basic glpat-abc");
+        Assert.Equal("error: Authorization: [removed]", line);
+    }
+
     [Fact]
     public void IsReportable_matches_the_four_problem_kinds_only()
     {

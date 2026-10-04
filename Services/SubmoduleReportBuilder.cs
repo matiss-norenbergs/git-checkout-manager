@@ -13,9 +13,15 @@ namespace GitCheckoutManager.Services
         // "https://user:token@host/…" → "https://host/…"
         private static readonly Regex UserInfo = new(@"(?<=://)[^/@\s]*@", RegexOptions.Compiled);
 
-        // "Authorization: Basic …", "PRIVATE-TOKEN: …" and similar header or key=value leftovers.
-        private static readonly Regex Secret = new(
-            @"(?i)\b(authorization|private-token|access[_-]?token|token)\b\s*[:=]\s*\S+(\s+\S+)?",
+        // "Authorization: Basic …", "PRIVATE-TOKEN: …": the value runs to the end of the line or the next quote.
+        // A bare "token:" is left alone so a message like "invalid token: bad credentials" stays readable.
+        private static readonly Regex HeaderSecret = new(
+            @"(?i)\b(authorization|private-token|job-token|(?:access|oauth|private)[_-]token)\b\s*:\s*[^\r\n'""]+",
+            RegexOptions.Compiled);
+
+        // "private_token=…", "?access_token=…", any key containing "token": covers URL query strings too.
+        private static readonly Regex KeyValueSecret = new(
+            @"(?i)\b([\w-]*token[\w-]*)\s*=\s*[^\s&#'""]+",
             RegexOptions.Compiled);
 
         /// <summary>True when the row belongs in a report: missing from .gitmodules, not initialized, failed, URL overridden, or cloned manually.</summary>
@@ -98,9 +104,14 @@ namespace GitCheckoutManager.Services
             return Clean(line);
         }
 
-        /// <summary>Removes credentials from a URL or message: user info in URLs and token/authorization values.</summary>
-        private static string Clean(string? text) =>
-            text == null ? string.Empty : Secret.Replace(UserInfo.Replace(text, string.Empty), "$1: [removed]");
+        /// <summary>Removes credentials from a URL or message: user info in URLs, token query parameters and token/authorization values.</summary>
+        private static string Clean(string? text)
+        {
+            if (text == null) return string.Empty;
+            var cleaned = UserInfo.Replace(text, string.Empty);
+            cleaned = HeaderSecret.Replace(cleaned, "$1: [removed]");
+            return KeyValueSecret.Replace(cleaned, "$1=[removed]");
+        }
 
         private static string Short(string sha) => sha.Length > 8 ? sha[..8] : sha;
     }

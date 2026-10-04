@@ -410,6 +410,7 @@ namespace GitCheckoutManager.ViewModels
 
             var succeeded = new List<string>();
             var failed = new List<string>();
+            var skipped = new List<string>();
             var cancelled = false;
 
             try
@@ -421,7 +422,21 @@ namespace GitCheckoutManager.ViewModels
                     GitResult result;
                     try
                     {
-                        result = await _submoduleService.InitAndUpdateAsync(row.Info.RepoRoot, row.Info, latest, nested, _resolveAuth, ct);
+                        // A populated row is about to be moved, so it gets the same safety rules as Switch branch.
+                        var refusal = await CheckBeforeUpdateAsync(row, latest, ct);
+                        if (refusal != null)
+                        {
+                            if (refusal.ExitCode == 0)
+                            {
+                                skipped.Add(row.DisplayPath);
+                                continue;
+                            }
+                            result = refusal;
+                        }
+                        else
+                        {
+                            result = await _submoduleService.InitAndUpdateAsync(row.Info.RepoRoot, row.Info, latest, nested, _resolveAuth, ct);
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -462,7 +477,7 @@ namespace GitCheckoutManager.ViewModels
                     }
                     else
                     {
-                        row.Error = _errors[row.DisplayPath] = TailOf(result);
+                        row.Error = _errors[row.DisplayPath] = result.ExitCode == DirtyExitCode ? result.StdErr : TailOf(result);
                         failed.Add(row.DisplayPath);
                     }
                 }
@@ -475,7 +490,7 @@ namespace GitCheckoutManager.ViewModels
                 foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
                     row.IsSelected = true;
 
-                ResultText = BuildResultText(succeeded.Count, targets.Count, failed, cancelled);
+                ResultText = BuildResultText(succeeded.Count, targets.Count, failed, skipped, cancelled);
             }
             finally
             {
@@ -486,6 +501,47 @@ namespace GitCheckoutManager.ViewModels
                 foreach (var row in _all) row.IsLocked = false;
                 IsRunning = false;
             }
+        }
+
+        /// <summary>Marks a refusal in <see cref="GitResult.ExitCode"/>; its StdErr is the row's error text.</summary>
+        private const int DirtyExitCode = 3;
+
+        /// <summary>
+        /// Safety check for a row that is already on disk and is about to be moved (a different commit, or
+        /// "latest from branch"). Returns null to go ahead, an exit-code-0 result to skip the row quietly
+        /// (the user declined), or a failure to record on the row. Missing submodules have nothing to lose.
+        /// </summary>
+        private async Task<GitResult?> CheckBeforeUpdateAsync(SubmoduleRowViewModel row, bool latest, CancellationToken ct)
+        {
+            var populated = row.State == SubmoduleState.DifferentCommit ||
+                            (row.State == SubmoduleState.Ready && latest);
+            if (!populated) return null;
+
+            SwitchCheck check;
+            try
+            {
+                check = await _submoduleService.CheckSwitchSafetyAsync(row.Info, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new GitResult(-1, string.Empty, ex.Message);
+            }
+
+            if (check.IsDirty)
+            {
+                var files = check.DirtyFiles.Take(MaxListedFiles);
+                var text = $"Uncommitted changes in {row.DisplayPath} — commit or discard them first." +
+                           Environment.NewLine + string.Join(Environment.NewLine, files);
+                return new GitResult(DirtyExitCode, string.Empty, text);
+            }
+
+            if (check.UnreferencedCommits && !_dialogService.ShowConfirmation(
+                    "Initialize selected",
+                    $"The current commit in {row.DisplayPath} isn't on any branch. Updating will leave it behind. Continue?",
+                    destructive: true))
+                return new GitResult(0, string.Empty, string.Empty);
+
+            return null;
         }
 
         // -- Row actions: fix a broken submodule for this checkout only ----------
@@ -733,10 +789,11 @@ namespace GitCheckoutManager.ViewModels
         [RelayCommand(CanExecute = nameof(IsRunning))]
         private void CancelRun() => _runCts?.Cancel();
 
-        private static string BuildResultText(int succeeded, int total, List<string> failed, bool cancelled)
+        private static string BuildResultText(int succeeded, int total, List<string> failed, List<string> skipped, bool cancelled)
         {
             var text = $"Initialized {succeeded} of {total}.";
             if (failed.Count > 0) text += $" {failed.Count} failed: {string.Join(", ", failed)}";
+            if (skipped.Count > 0) text += $" {skipped.Count} skipped: {string.Join(", ", skipped)}";
             if (cancelled) text += " Cancelled.";
             return text;
         }

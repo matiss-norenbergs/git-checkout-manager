@@ -111,4 +111,24 @@ public class NestedSubmoduleTests
         var only = Assert.Single(list);
         Assert.Equal(SubmoduleState.NotInitialized, only.State);
     }
+
+    [RequiresGitFact]
+    public async Task ListAsync_keeps_the_top_level_row_when_the_gitdir_of_a_populated_submodule_is_missing()
+    {
+        using var fx = new GitFixture();
+        var (main, _) = Setup(fx);
+        var svc = new SubmoduleService(new GitService());
+
+        // The ".git" file of a populated submodule now points nowhere.
+        var dotGit = Path.Combine(main, "external", "lib", ".git");
+        Assert.True(File.Exists(dotGit));
+        File.SetAttributes(dotGit, FileAttributes.Normal);
+        File.WriteAllText(dotGit, "gitdir: ../../.git/modules/does-not-exist" + Environment.NewLine);
+
+        var list = await svc.ListAsync(main);
+
+        var top = Assert.Single(list);
+        Assert.Equal("external/lib", top.Path);
+        Assert.Equal(0, top.Depth);
+    }
 }

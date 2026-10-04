@@ -251,13 +251,17 @@ public class SubmoduleBranchSwitchTests
         private readonly SubmoduleService _inner = NewService();
         public int SwitchCalls { get; private set; }
         public int ResetCalls { get; private set; }
+        public List<string> InitPaths { get; } = new();
 
         public Task<List<SubmoduleInfo>> ListAsync(string root, CancellationToken ct = default) => _inner.ListAsync(root, ct);
         public Task<SubmoduleInfo?> GetAsync(string root, string path, CancellationToken ct = default, string displayPrefix = "", int depth = 0) =>
             _inner.GetAsync(root, path, ct, displayPrefix, depth);
         public Task<GitResult> InitAndUpdateAsync(string root, SubmoduleInfo sub, bool latestFromBranch, bool includeNested,
-            Func<string, GitAuth?> resolveAuth, CancellationToken ct = default) =>
-            _inner.InitAndUpdateAsync(root, sub, latestFromBranch, includeNested, resolveAuth, ct);
+            Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        {
+            InitPaths.Add(sub.DisplayPath);
+            return _inner.InitAndUpdateAsync(root, sub, latestFromBranch, includeNested, resolveAuth, ct);
+        }
         public Task<GitResult> TestUrlAsync(string url, GitAuth? auth, CancellationToken ct = default) => _inner.TestUrlAsync(url, auth, ct);
         public Task<GitResult> SetUrlAndInitAsync(string root, SubmoduleInfo sub, string newUrl, bool latestFromBranch,
             bool includeNested, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default) =>
@@ -287,6 +291,7 @@ public class SubmoduleBranchSwitchTests
         public bool Confirm { get; set; } = true;
         public List<string> Messages { get; } = new();
         public List<string> Confirmations { get; } = new();
+        public List<bool> DestructiveFlags { get; } = new();
         public int PickerCalls { get; private set; }
 
         public string? ShowSubmoduleBranch(SubmoduleBranchModel model) { PickerCalls++; return BranchToPick; }
@@ -296,7 +301,7 @@ public class SubmoduleBranchSwitchTests
             Messages.Add(message);
             MessageDetails.Add(details);
         }
-        public bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false) { Confirmations.Add(message); return Confirm; }
+        public bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false) { Confirmations.Add(message); DestructiveFlags.Add(destructive); return Confirm; }
 
         public string? ShowSaveFileDialog(string filter, string defaultExtension, string defaultFileName) => throw new NotSupportedException();
         public string? ShowOpenFileDialog(string filter, string title = "Open File") => throw new NotSupportedException();
@@ -398,5 +403,278 @@ public class SubmoduleBranchSwitchTests
 
         Assert.Equal(0, spy.SwitchCalls);
         Assert.Contains(dialogs.Confirmations, c => c.Contains("isn't on any branch"));
+    }
+
+    // ── Hardening: more switch cases ──────────────────────────────────────
+
+    [RequiresGitFact]
+    public async Task Switch_to_a_branch_with_a_slash_tracks_origin_with_the_same_name()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "lib", "feature/x");
+        var main = AddSubmodule(fx, origin, "external/lib");
+        var svc = NewService();
+
+        var sub = await Row(svc, main, "external/lib");
+        Assert.Contains("feature/x", await svc.ListRemoteBranchesAsync(sub, NoAuth));
+
+        var result = await svc.SwitchBranchAsync(sub, "feature/x", NoAuth);
+        Assert.True(result.ExitCode == 0, result.StdErr);
+
+        var after = await Row(svc, main, "external/lib");
+        Assert.Equal("feature/x", after.CurrentBranch);
+        var folder = Path.Combine(main, "external", "lib");
+        Assert.Equal("origin/feature/x", GitFixture.Git(folder, "rev-parse", "--abbrev-ref", "feature/x@{upstream}").Trim());
+    }
+
+    [RequiresGitFact]
+    public async Task Switch_to_a_branch_deleted_on_origin_after_listing_returns_the_fetch_error_and_changes_nothing()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "lib", "feature");
+        var main = AddSubmodule(fx, origin, "external/lib");
+        var svc = NewService();
+        var folder = Path.Combine(main, "external", "lib");
+
+        var sub = await Row(svc, main, "external/lib");
+        Assert.Contains("feature", await svc.ListRemoteBranchesAsync(sub, NoAuth));
+        var headBefore = GitFixture.Git(folder, "rev-parse", "HEAD").Trim();
+
+        GitFixture.Git(origin, "branch", "-D", "feature");
+
+        var result = await svc.SwitchBranchAsync(sub, "feature", NoAuth);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("feature", result.StdErr);
+        Assert.Equal(headBefore, GitFixture.Git(folder, "rev-parse", "HEAD").Trim());
+        var after = await Row(svc, main, "external/lib");
+        Assert.Equal("main", after.CurrentBranch);
+        Assert.Equal(SubmoduleState.Ready, after.State);
+        Assert.Equal(string.Empty, GitFixture.Git(folder, "branch", "--list", "feature").Trim());
+    }
+
+    [RequiresGitFact]
+    public async Task CheckSwitchSafety_counts_an_untracked_file_as_dirty()
+    {
+        // Documents current behaviour: git status --porcelain lists untracked files, so they block a switch too.
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "lib", "feature");
+        var main = AddSubmodule(fx, origin, "external/lib");
+        var svc = NewService();
+        GitFixture.Write(Path.Combine(main, "external", "lib", "notes.txt"), "mine");
+
+        var check = await svc.CheckSwitchSafetyAsync(await Row(svc, main, "external/lib"));
+
+        Assert.True(check.IsDirty);
+        var line = Assert.Single(check.DirtyFiles);
+        Assert.StartsWith("??", line);
+        Assert.EndsWith("notes.txt", line);
+    }
+
+    [RequiresGitFact]
+    public async Task CheckSwitchSafety_reports_a_parent_submodule_dirty_when_its_nested_submodule_moved()
+    {
+        // Documents current behaviour: the moved nested gitlink shows up as a modified path in the parent.
+        using var fx = new GitFixture();
+        var inner = MakeOrigin(fx, "inner", "dev");
+
+        var lib = fx.Sub("lib");
+        GitFixture.Git(lib, "init");
+        GitFixture.Write(Path.Combine(lib, "l.txt"), "l");
+        GitFixture.Git(lib, "add", ".");
+        GitFixture.Git(lib, "commit", "-m", "l");
+        GitFixture.Git(lib, "submodule", "add", new Uri(inner).AbsoluteUri, "vendor/x");
+        GitFixture.Git(lib, "commit", "-m", "add inner");
+
+        var main = AddSubmodule(fx, lib, "external/lib");
+        var svc = NewService();
+
+        var nested = (await svc.ListAsync(main))[1];
+        Assert.Equal(0, (await svc.InitAndUpdateAsync(nested.RepoRoot, nested, false, false, NoAuth)).ExitCode);
+
+        var list = await svc.ListAsync(main);
+        Assert.False((await svc.CheckSwitchSafetyAsync(list[0])).IsDirty);
+
+        Assert.Equal(0, (await svc.SwitchBranchAsync(list[1], "dev", NoAuth)).ExitCode);
+
+        var parent = (await svc.ListAsync(main))[0];
+        var check = await svc.CheckSwitchSafetyAsync(parent);
+        Assert.True(check.IsDirty);
+        Assert.Contains(check.DirtyFiles, l => l.EndsWith("vendor/x"));
+    }
+
+    private sealed class ThrowingGit : IGitService
+    {
+        public Task<List<string>?> GetSparseCheckoutPathsAsync(string localRepoPath) => throw new InvalidOperationException("git was run");
+        public Task<GitResult> RunAsync(IEnumerable<string> args, string? workingDirectory = null, GitAuth? auth = null,
+            CancellationToken ct = default, bool allowInteractiveAuth = false) => throw new InvalidOperationException("git was run");
+        public Task<List<Branch>> ListRemoteBranchesAsync(string repoUrl, GitAuth? auth, CancellationToken ct = default) =>
+            throw new InvalidOperationException("git was run");
+    }
+
+    [Theory]
+    [InlineData("-x")]
+    [InlineData("--upload-pack=evil")]
+    [InlineData("")]
+    public async Task Switch_rejects_an_option_like_or_empty_branch_name_without_running_git(string branch)
+    {
+        var svc = new SubmoduleService(new ThrowingGit());
+        var sub = new SubmoduleInfo("external/lib", "external/lib", null, null, "abc", "abc", SubmoduleState.Ready,
+            RepoRoot: "C:\\nowhere", DisplayPath: "external/lib");
+
+        var result = await svc.SwitchBranchAsync(sub, branch, NoAuth);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("not a valid branch name", result.StdErr);
+    }
+
+    // ── Hardening: Initialize selected respects the switch safety rules ───
+
+    /// <summary>One main repo with several submodules, each cloned from its own origin.</summary>
+    private static string AddSubmodules(GitFixture fx, params (string Origin, string Path)[] subs)
+    {
+        var main = fx.Sub("main");
+        GitFixture.Git(main, "init");
+        GitFixture.Write(Path.Combine(main, "m.txt"), "m");
+        GitFixture.Git(main, "add", ".");
+        GitFixture.Git(main, "commit", "-m", "m");
+        foreach (var (origin, path) in subs)
+            GitFixture.Git(main, "submodule", "add", new Uri(origin).AbsoluteUri, path);
+        GitFixture.Git(main, "commit", "-m", "add submodules");
+        return main;
+    }
+
+    [RequiresGitFact]
+    public async Task InitializeSelected_skips_a_dirty_row_marks_it_failed_and_still_processes_the_others()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "feature"), "external/b"));
+        var svc = NewService();
+
+        // Move both off their recorded commit, then leave a tracked change in a.
+        foreach (var path in new[] { "external/a", "external/b" })
+            Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, path), "feature", NoAuth)).ExitCode);
+        var folderA = Path.Combine(main, "external", "a");
+        GitFixture.Write(Path.Combine(folderA, "a.txt"), "changed");
+        var headA = GitFixture.Git(folderA, "rev-parse", "HEAD").Trim();
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        Assert.All(vm.Rows, r => Assert.Equal(SubmoduleState.DifferentCommit, r.State));
+        foreach (var r in vm.Rows) r.IsSelected = true;
+
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(new[] { "external/b" }, spy.InitPaths);
+        Assert.Empty(dialogs.Confirmations);
+
+        var rowA = vm.Rows.Single(r => r.DisplayPath == "external/a");
+        Assert.True(rowA.HasError);
+        Assert.Equal("Failed", rowA.DisplayStateText);
+        var lines = rowA.Error.Split(Environment.NewLine);
+        Assert.Equal("Uncommitted changes in external/a — commit or discard them first.", lines[0]);
+        Assert.Contains(lines.Skip(1), l => l.EndsWith("a.txt"));
+
+        // Not touched: same commit, same branch, the edit is still there.
+        Assert.Equal(headA, GitFixture.Git(folderA, "rev-parse", "HEAD").Trim());
+        Assert.Equal("changed", File.ReadAllText(Path.Combine(folderA, "a.txt")));
+        Assert.Equal(SubmoduleState.DifferentCommit, rowA.State);
+
+        var rowB = vm.Rows.Single(r => r.DisplayPath == "external/b");
+        Assert.False(rowB.HasError);
+        Assert.Equal(SubmoduleState.Ready, rowB.State);
+        Assert.Contains("1 failed: external/a", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task InitializeSelected_lists_at_most_50_files_of_a_dirty_row()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a"));
+        var svc = NewService();
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "feature", NoAuth)).ExitCode);
+        var folder = Path.Combine(main, "external", "a");
+        for (var i = 0; i < 60; i++) GitFixture.Write(Path.Combine(folder, $"junk{i:D2}.txt"), "x");
+
+        var (vm, spy, _) = await OpenWindowModel(main);
+        vm.Rows.Single().IsSelected = true;
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        Assert.Empty(spy.InitPaths);
+        Assert.Equal(51, vm.Rows.Single().Error.Split(Environment.NewLine).Length);
+    }
+
+    [RequiresGitFact]
+    public async Task InitializeSelected_asks_before_leaving_a_commit_on_no_branch_and_stops_on_No()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a"));
+        var folder = Path.Combine(main, "external", "a");
+        GitFixture.Git(folder, "checkout", "--detach");
+        GitFixture.Write(Path.Combine(folder, "d.txt"), "d");
+        GitFixture.Git(folder, "add", ".");
+        GitFixture.Git(folder, "commit", "-m", "orphan");
+        var orphan = GitFixture.Git(folder, "rev-parse", "HEAD").Trim();
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        dialogs.Confirm = false;
+        vm.Rows.Single().IsSelected = true;
+
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        var message = Assert.Single(dialogs.Confirmations);
+        Assert.Equal("The current commit in external/a isn't on any branch. Updating will leave it behind. Continue?", message);
+        Assert.True(Assert.Single(dialogs.DestructiveFlags));
+
+        Assert.Empty(spy.InitPaths);
+        Assert.Equal(orphan, GitFixture.Git(folder, "rev-parse", "HEAD").Trim());
+        Assert.Equal(orphan, vm.Rows.Single().Info.CurrentSha);
+        Assert.False(vm.Rows.Single().HasError);
+        Assert.True(File.Exists(Path.Combine(folder, "d.txt")));
+    }
+
+    [RequiresGitFact]
+    public async Task InitializeSelected_moves_the_unreferenced_row_when_the_user_says_Yes()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a"));
+        var folder = Path.Combine(main, "external", "a");
+        GitFixture.Git(folder, "checkout", "--detach");
+        GitFixture.Write(Path.Combine(folder, "d.txt"), "d");
+        GitFixture.Git(folder, "add", ".");
+        GitFixture.Git(folder, "commit", "-m", "orphan");
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        dialogs.Confirm = true;
+        vm.Rows.Single().IsSelected = true;
+
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        Assert.Single(dialogs.Confirmations);
+        Assert.Equal(new[] { "external/a" }, spy.InitPaths);
+        Assert.Equal(SubmoduleState.Ready, vm.Rows.Single().State);
+    }
+
+    [RequiresGitFact]
+    public async Task InitializeSelected_does_not_check_a_submodule_that_is_not_initialized()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (origin, "external/a"));
+
+        // A fresh clone of main has the submodule registered but empty.
+        var clone = Path.Combine(fx.Root, "clone");
+        GitFixture.Git(fx.Root, "clone", main, clone);
+
+        var (vm, spy, dialogs) = await OpenWindowModel(clone);
+        Assert.Equal(SubmoduleState.NotInitialized, vm.Rows.Single().State);
+        vm.Rows.Single().IsSelected = true;
+
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(new[] { "external/a" }, spy.InitPaths);
+        Assert.Empty(dialogs.Confirmations);
+        Assert.Equal(SubmoduleState.Ready, vm.Rows.Single().State);
     }
 }
