@@ -128,4 +128,59 @@ public class CommandGeneratorTests
         Assert.DoesNotContain('\r', sh);
         Assert.Contains("'it'\\''s'", sh);
     }
+
+    private string CleanupLine(string path) =>
+        Lines(_gen.GenerateManageBatScript(@"C:", new[] { "keep" }, false, new[] { path }))
+            .Single(l => l.StartsWith("if exist"));
+
+    [Theory]
+    [InlineData("it's here", "if exist \"it's here\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath 'it''s here'\"")]
+    [InlineData("assets[old]", "if exist \"assets[old]\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath 'assets[old]'\"")]
+    [InlineData("100% done", "if exist \"100%% done\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath '100%% done'\"")]
+    [InlineData("Ā ū", "if exist \"Ā ū\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath 'Ā ū'\"")]
+    public void Manage_bat_cleanup_line_is_escaped(string path, string expected)
+    {
+        Assert.Equal(expected, CleanupLine(path));
+    }
+
+    [Theory]
+    [InlineData("it's here", "[ -d 'it'\\''s here' ] && rm -rf 'it'\\''s here'")]
+    [InlineData("assets[old]", "[ -d 'assets[old]' ] && rm -rf 'assets[old]'")]
+    [InlineData("100% done", "[ -d '100% done' ] && rm -rf '100% done'")]
+    public void Manage_sh_cleanup_line_is_quoted(string path, string expected)
+    {
+        var sh = _gen.GenerateManageShScript("/r", new[] { "keep" }, false, new[] { path });
+        Assert.Contains(expected, sh.Split('\n'));
+    }
+
+    [Fact]
+    public void Manage_bat_cleanup_line_deletes_folder_with_quote_and_brackets()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        const string name = "it's [x]";
+        var root = Path.Combine(Path.GetTempPath(), "gcm-cleanup-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(root, name);
+        Directory.CreateDirectory(Path.Combine(target, "sub"));
+        File.WriteAllText(Path.Combine(target, "sub", "f.txt"), "x");
+        try
+        {
+            var bat = Path.Combine(root, "cleanup.bat");
+            File.WriteAllText(bat, "@echo off\r\n" + CleanupLine(name) + "\r\n");
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c \"{bat}\"")
+            {
+                WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi)!;
+            proc.StandardOutput.ReadToEnd();
+            proc.StandardError.ReadToEnd();
+            Assert.True(proc.WaitForExit(60000));
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
 }

@@ -204,7 +204,7 @@ namespace GitCheckoutManager.Services
                 sb.AppendLine();
                 // PowerShell Remove-Item handles read-only files and nested .git dirs that rmdir cannot
                 foreach (var p in removed)
-                    sb.AppendLine($"if exist \"{BatEscape(p)}\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path '{BatEscape(p)}'\"");
+                    sb.AppendLine($"if exist \"{BatEscape(p)}\" powershell -NoProfile -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath '{BatEscape(PsSingleQuoteEscape(p))}'\"");
             }
 
             AppendBatEnd(sb, keepWindowOpen, false);
@@ -330,6 +330,9 @@ namespace GitCheckoutManager.Services
         }
 
         private static string BatEscape(string value) => value.Replace("%", "%%");
+
+        // Inside a PowerShell single-quoted string only ' is special, and it is escaped by doubling.
+        private static string PsSingleQuoteEscape(string value) => value.Replace("'", "''");
 
         private static string ShQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
 

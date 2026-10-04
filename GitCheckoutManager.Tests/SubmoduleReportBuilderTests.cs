@@ -191,4 +191,36 @@ public class SubmoduleReportBuilderTests
         Assert.True(R(Sub("a", SubmoduleState.NotInitialized)));
         Assert.False(R(Sub("a", SubmoduleState.DifferentCommit)));
     }
+
+    [Fact]
+    public void Skipped_for_uncommitted_changes_gets_own_section_and_is_not_listed_as_failed()
+    {
+        var text = Build(new SubmoduleReportItem(Sub("external/lib", SubmoduleState.DifferentCommit, "https://x/lib.git"),
+            "Uncommitted changes in external/lib — commit or discard them first.", SubmoduleSkipReason.UncommittedChanges));
+
+        Assert.Contains("Skipped (uncommitted changes):", text);
+        Assert.Contains("  - external/lib", text);
+        Assert.DoesNotContain("Failed to initialize", text);
+    }
+
+    [Fact]
+    public void Declined_skip_is_not_reported()
+    {
+        var item = new SubmoduleReportItem(Sub("external/lib", SubmoduleState.DifferentCommit),
+            "Skipped: not on any branch.", SubmoduleSkipReason.Declined);
+
+        Assert.False(SubmoduleReportBuilder.IsReportable(item));
+        var text = Build(item);
+        Assert.DoesNotContain("Skipped (uncommitted changes)", text);
+        Assert.DoesNotContain("Failed to initialize", text);
+    }
+
+    [Fact]
+    public void Real_failure_still_listed_as_failed()
+    {
+        var text = Build(new SubmoduleReportItem(Sub("a", SubmoduleState.NotInitialized, "https://x/a.git"), "fatal: boom"));
+
+        Assert.Contains("Failed to initialize:", text);
+        Assert.DoesNotContain("Skipped (uncommitted changes)", text);
+    }
 }

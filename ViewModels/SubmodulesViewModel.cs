@@ -119,6 +119,11 @@ namespace GitCheckoutManager.ViewModels
 
         public bool HasError => !string.IsNullOrEmpty(Error);
 
+        /// <summary>Set when the last action left this row alone on purpose; the reason is then in <see cref="Error"/>.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DisplayStateText), nameof(DisplayBrushKey))]
+        private SubmoduleSkipReason _skip;
+
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(DisplayStateText), nameof(DisplayBrushKey), nameof(ShowUnderlyingState))]
         private bool _isWorking;
@@ -161,11 +166,11 @@ namespace GitCheckoutManager.ViewModels
             _ => null
         };
 
-        public string DisplayStateText => IsWorking ? "Working…" : IsQueued ? "Queued" : HasError ? "Failed" : StateText;
+        public string DisplayStateText => IsWorking ? "Working…" : IsQueued ? "Queued" : HasError ? (Skip != SubmoduleSkipReason.None ? "Skipped" : "Failed") : StateText;
 
-        public string DisplayBrushKey => IsWorking ? "AccentBrush" : IsQueued ? "MutedTextBrush" : HasError ? "DangerBrush" : StateBrushKey;
+        public string DisplayBrushKey => IsWorking ? "AccentBrush" : IsQueued ? "MutedTextBrush" : HasError ? (Skip != SubmoduleSkipReason.None ? "MutedTextBrush" : "DangerBrush") : StateBrushKey;
 
-        /// <summary>A failed row shows "Failed", so its real state moves to a second line.</summary>
+        /// <summary>A failed or skipped row shows that word, so its real state moves to a second line.</summary>
         public bool ShowUnderlyingState => HasError && !IsWorking && !IsQueued;
 
         private static string Short(string sha) => sha.Length > 8 ? sha[..8] : sha;
@@ -191,6 +196,23 @@ namespace GitCheckoutManager.ViewModels
 
         /// <summary>Last failure text per path. Survives the reload after a run, so failed rows keep their error.</summary>
         private readonly Dictionary<string, string> _errors = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, SubmoduleSkipReason> _skips = new(StringComparer.Ordinal);
+
+        private void SetRowError(SubmoduleRowViewModel row, string key, string text, SubmoduleSkipReason skip = SubmoduleSkipReason.None)
+        {
+            row.Skip = skip;
+            row.Error = _errors[key] = text;
+            if (skip == SubmoduleSkipReason.None) _skips.Remove(key);
+            else _skips[key] = skip;
+        }
+
+        private void ClearRowError(SubmoduleRowViewModel row, string key)
+        {
+            row.Error = string.Empty;
+            row.Skip = SubmoduleSkipReason.None;
+            _errors.Remove(key);
+            _skips.Remove(key);
+        }
 
         public SubmodulesViewModel(ISubmoduleService submoduleService, string root,
             Func<string, GitAuth?> resolveAuth, IDialogService dialogService,
@@ -303,6 +325,7 @@ namespace GitCheckoutManager.ViewModels
         {
             // A manual refresh starts clean; only the reload after a run keeps its error texts.
             _errors.Clear();
+            _skips.Clear();
             ResultText = string.Empty;
             return LoadAsync();
         }
@@ -341,6 +364,7 @@ namespace GitCheckoutManager.ViewModels
         {
             var row = new SubmoduleRowViewModel(info) { IsLocked = IsRunning };
             var key = info.DisplayPath.Length > 0 ? info.DisplayPath : info.Path;
+            if (_skips.TryGetValue(key, out var skip)) row.Skip = skip;
             if (_errors.TryGetValue(key, out var error)) row.Error = error;
 
             row.PropertyChanged += (_, e) =>
@@ -426,8 +450,10 @@ namespace GitCheckoutManager.ViewModels
                         var refusal = await CheckBeforeUpdateAsync(row, latest, ct);
                         if (refusal != null)
                         {
-                            if (refusal.ExitCode == 0)
+                            if (refusal.ExitCode is DirtyExitCode or DeclinedExitCode)
                             {
+                                SetRowError(row, row.DisplayPath, refusal.StdErr,
+                                    refusal.ExitCode == DirtyExitCode ? SubmoduleSkipReason.UncommittedChanges : SubmoduleSkipReason.Declined);
                                 skipped.Add(row.DisplayPath);
                                 continue;
                             }
@@ -454,8 +480,7 @@ namespace GitCheckoutManager.ViewModels
 
                     if (result.ExitCode == 0)
                     {
-                        row.Error = string.Empty;
-                        _errors.Remove(row.DisplayPath);
+                        ClearRowError(row, row.DisplayPath);
                         succeeded.Add(row.DisplayPath);
 
                         // Show the real state now instead of waiting for the end-of-run reload.
@@ -477,7 +502,7 @@ namespace GitCheckoutManager.ViewModels
                     }
                     else
                     {
-                        row.Error = _errors[row.DisplayPath] = result.ExitCode == DirtyExitCode ? result.StdErr : TailOf(result);
+                        SetRowError(row, row.DisplayPath, TailOf(result));
                         failed.Add(row.DisplayPath);
                     }
                 }
@@ -506,10 +531,13 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>Marks a refusal in <see cref="GitResult.ExitCode"/>; its StdErr is the row's error text.</summary>
         private const int DirtyExitCode = 3;
 
+        /// <summary>Marks a row the user chose not to update (the unreferenced-commit question was answered No).</summary>
+        private const int DeclinedExitCode = 4;
+
         /// <summary>
         /// Safety check for a row that is already on disk and is about to be moved (a different commit, or
-        /// "latest from branch"). Returns null to go ahead, an exit-code-0 result to skip the row quietly
-        /// (the user declined), or a failure to record on the row. Missing submodules have nothing to lose.
+        /// "latest from branch"). Returns null to go ahead, a dirty/declined result to skip the row, or a
+        /// failure to record on the row. Missing submodules have nothing to lose.
         /// </summary>
         private async Task<GitResult?> CheckBeforeUpdateAsync(SubmoduleRowViewModel row, bool latest, CancellationToken ct)
         {
@@ -539,7 +567,8 @@ namespace GitCheckoutManager.ViewModels
                     "Initialize selected",
                     $"The current commit in {row.DisplayPath} isn't on any branch. Updating will leave it behind. Continue?",
                     destructive: true))
-                return new GitResult(0, string.Empty, string.Empty);
+                return new GitResult(DeclinedExitCode, string.Empty,
+                    $"Skipped: the current commit in {row.DisplayPath} isn't on any branch, and you chose not to leave it behind.");
 
             return null;
         }
@@ -666,7 +695,7 @@ namespace GitCheckoutManager.ViewModels
             }
             catch (Exception ex)
             {
-                row.Error = _errors[row.DisplayPath] = ex.Message;
+                SetRowError(row, row.DisplayPath, ex.Message);
                 return null;
             }
             finally
@@ -730,15 +759,14 @@ namespace GitCheckoutManager.ViewModels
 
                 if (result.ExitCode == 0)
                 {
-                    row.Error = string.Empty;
-                    _errors.Remove(path);
+                    ClearRowError(row, path);
                     ResultText = $"{verb} {path}: done.";
                     var note = showNote ? FirstErrorLine(result, fallback: string.Empty) : string.Empty;
                     if (note.Length > 0) ResultText += $" {note}";
                 }
                 else
                 {
-                    row.Error = _errors[path] = TailOf(result);
+                    SetRowError(row, path, TailOf(result));
                     ResultText = $"{verb} {path}: failed.";
                 }
 
@@ -762,7 +790,7 @@ namespace GitCheckoutManager.ViewModels
         // -- Copy report -----------------------------------------------------------
 
         private List<SubmoduleReportItem> ReportItems() => _all
-            .Select(r => new SubmoduleReportItem(r.Info, r.HasError ? r.Error : null))
+            .Select(r => new SubmoduleReportItem(r.Info, r.HasError ? r.Error : null, r.Skip))
             .Where(SubmoduleReportBuilder.IsReportable)
             .ToList();
 

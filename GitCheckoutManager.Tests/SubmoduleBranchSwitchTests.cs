@@ -545,7 +545,7 @@ public class SubmoduleBranchSwitchTests
     }
 
     [RequiresGitFact]
-    public async Task InitializeSelected_skips_a_dirty_row_marks_it_failed_and_still_processes_the_others()
+    public async Task InitializeSelected_skips_a_dirty_row_marks_it_skipped_and_still_processes_the_others()
     {
         using var fx = new GitFixture();
         var main = AddSubmodules(fx,
@@ -571,7 +571,10 @@ public class SubmoduleBranchSwitchTests
 
         var rowA = vm.Rows.Single(r => r.DisplayPath == "external/a");
         Assert.True(rowA.HasError);
-        Assert.Equal("Failed", rowA.DisplayStateText);
+        Assert.Equal("Skipped", rowA.DisplayStateText);
+        Assert.Equal("MutedTextBrush", rowA.DisplayBrushKey);
+        Assert.Equal(SubmoduleSkipReason.UncommittedChanges, rowA.Skip);
+        Assert.Contains("1 skipped: external/a", vm.ResultText);
         var lines = rowA.Error.Split(Environment.NewLine);
         Assert.Equal("Uncommitted changes in external/a — commit or discard them first.", lines[0]);
         Assert.Contains(lines.Skip(1), l => l.EndsWith("a.txt"));
@@ -584,7 +587,7 @@ public class SubmoduleBranchSwitchTests
         var rowB = vm.Rows.Single(r => r.DisplayPath == "external/b");
         Assert.False(rowB.HasError);
         Assert.Equal(SubmoduleState.Ready, rowB.State);
-        Assert.Contains("1 failed: external/a", vm.ResultText);
+        Assert.Contains("1 skipped: external/a", vm.ResultText);
     }
 
     [RequiresGitFact]
@@ -630,7 +633,13 @@ public class SubmoduleBranchSwitchTests
         Assert.Empty(spy.InitPaths);
         Assert.Equal(orphan, GitFixture.Git(folder, "rev-parse", "HEAD").Trim());
         Assert.Equal(orphan, vm.Rows.Single().Info.CurrentSha);
-        Assert.False(vm.Rows.Single().HasError);
+        // The reason stays in Error details, but the row is "Skipped", not "Failed".
+        var row = vm.Rows.Single();
+        Assert.True(row.HasError);
+        Assert.Equal("Skipped", row.DisplayStateText);
+        Assert.Equal("MutedTextBrush", row.DisplayBrushKey);
+        Assert.Equal(SubmoduleSkipReason.Declined, row.Skip);
+        Assert.Contains("1 skipped: external/a", vm.ResultText);
         Assert.True(File.Exists(Path.Combine(folder, "d.txt")));
     }
 
