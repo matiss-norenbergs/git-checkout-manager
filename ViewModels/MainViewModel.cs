@@ -601,7 +601,9 @@ namespace GitCheckoutManager.ViewModels
 
             if (value == AppMode.Manage)
             {
+                // Dropped so the cancelled load's finally can't clear IsLoading while Manage opens a checkout.
                 _treeLoadCts?.Cancel();
+                _treeLoadCts = null;
                 ShowActiveTree();
 
                 RefreshRecentCheckoutState();
@@ -1324,7 +1326,10 @@ namespace GitCheckoutManager.ViewModels
             catch (Exception ex)
             {
                 _activeCheckoutPath = null;
-                StatusMessage = $"Could not open checkout: {ex.Message}";
+                var message = $"Could not open checkout: {ex.Message}";
+                _tabs.Manage.StatusMessage = message;
+                if (IsManageMode)
+                    StatusMessage = message;
             }
             finally
             {
@@ -2181,8 +2186,57 @@ namespace GitCheckoutManager.ViewModels
             ApplyFilter(filter);
         }
 
+        // Matches of the filter last applied, for Enter / Shift+Enter navigation.
+        private List<TreeNodeViewModel> _matches = new();
+        private string _matchFilter = string.Empty;
+        private int _matchIndex = -1;
+        private TreeNodeViewModel? _currentMatch;
+
+        /// <summary>Raised when navigation picks a match, so the view can scroll it into view.</summary>
+        public event Action<TreeNodeViewModel>? MatchNavigated;
+
+        [RelayCommand]
+        private void NextMatch() => NavigateMatch(forward: true);
+
+        [RelayCommand]
+        private void PreviousMatch() => NavigateMatch(forward: false);
+
+        private void NavigateMatch(bool forward)
+        {
+            if (string.IsNullOrEmpty(SearchFilter)) return;
+
+            // A pending debounce would leave the match list stale; apply the typed filter now.
+            if (SearchFilter != _matchFilter)
+            {
+                _searchCts?.Cancel();
+                ApplyFilter(SearchFilter);
+            }
+
+            var next = TreeSearch.NextIndex(_matchIndex, _matches.Count, forward);
+            if (next < 0) return;
+
+            _matchIndex = next;
+            var node = _matches[next];
+            if (_currentMatch != null) _currentMatch.IsSelected = false;
+            _currentMatch = node;
+
+            // Beyond the auto-expand limit nothing is expanded, so open the way to this match.
+            for (var p = node.Parent; p != null; p = p.Parent)
+                p.IsExpanded = true;
+            node.IsSelected = true;
+
+            SearchResultText = $"{next + 1} / {_matches.Count}";
+            MatchNavigated?.Invoke(node);
+        }
+
         private void ApplyFilter(string filter)
         {
+            if (_currentMatch != null) _currentMatch.IsSelected = false;
+            _currentMatch = null;
+            _matchIndex = -1;
+            _matchFilter = filter;
+            _matches = TreeSearch.FindMatches(_allRootNodes, filter);
+
             if (string.IsNullOrEmpty(filter))
             {
                 TreeSearch.Clear(_allRootNodes);

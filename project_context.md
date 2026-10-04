@@ -19,6 +19,7 @@ Two tabs:
 - .NET 8, WPF (`net8.0-windows`), MVVM with **CommunityToolkit.Mvvm** (`[ObservableProperty]`, `[RelayCommand]`)
 - `System.Text.Json`, `HttpClient` (host APIs only), `System.Security.Cryptography.ProtectedData` (DPAPI)
 - Git CLI is called through **one runner**, `IGitService.RunAsync`
+- **Velopack** handles installs and updates. The `Velopack` package version in `GitCheckoutManager.csproj` and the `vpk` tool version in `.github/workflows/release.yml` (`dotnet tool install -g vpk --version …`) must be bumped together. The csproj `<Version>` is overridden from the tag by the release workflow.
 - No third-party UI frameworks. DI is manual in `MainWindow.xaml.cs`.
 
 ---
@@ -123,6 +124,4 @@ All paths come from `AppPaths`. The project was renamed from GitSparseManager; `
 
 ## 8. Planned / not yet built
 
-- Submodules v3: offer the Submodules window after Execute Locally when exit code is 2; nested submodule rows; "Copy report".
-- Manage `.bat` cleanup line: escape `'` in paths passed to PowerShell `Remove-Item`.
 - Branch switching in the Manage tab: deliberately out of scope for now.

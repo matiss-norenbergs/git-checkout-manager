@@ -4,8 +4,15 @@ using GitCheckoutManager.Models;
 
 namespace GitCheckoutManager.Services
 {
-    /// <summary>One submodule with the error its last action left, if any.</summary>
-    public sealed record SubmoduleReportItem(SubmoduleInfo Info, string? Error);
+    /// <summary>Why the last action left a submodule alone on purpose (as opposed to failing).</summary>
+    public enum SubmoduleSkipReason { None, UncommittedChanges, Declined }
+
+    /// <summary>One submodule with the error its last action left, if any, and whether that was a deliberate skip.</summary>
+    public sealed record SubmoduleReportItem(SubmoduleInfo Info, string? Error, SubmoduleSkipReason Skip = SubmoduleSkipReason.None)
+    {
+        /// <summary>A real failure: there is an error and the row was not merely skipped.</summary>
+        public bool IsFailure => !string.IsNullOrWhiteSpace(Error) && Skip == SubmoduleSkipReason.None;
+    }
 
     /// <summary>Formats the plain-text report a user can paste to the maintainer of a repository with broken submodules.</summary>
     public static class SubmoduleReportBuilder
@@ -29,7 +36,8 @@ namespace GitCheckoutManager.Services
             item.Info.State is SubmoduleState.MissingFromGitmodules or SubmoduleState.ManuallyCloned
                 or SubmoduleState.NotInitialized ||
             item.Info.UrlOverridden ||
-            !string.IsNullOrWhiteSpace(item.Error);
+            item.IsFailure ||
+            item.Skip == SubmoduleSkipReason.UncommittedChanges;
 
         public static string Build(string? remoteUrl, string? branch, string? headSha, string version,
             DateTime date, IEnumerable<SubmoduleReportItem> items)
@@ -48,7 +56,7 @@ namespace GitCheckoutManager.Services
                     .Select(i => new[] { $"{i.Info.DisplayPath} — pinned {Short(i.Info.PinnedSha)}" }));
 
             Section(sb, "Failed to initialize:",
-                list.Where(i => !string.IsNullOrWhiteSpace(i.Error))
+                list.Where(i => i.IsFailure)
                     .Select(i =>
                     {
                         var head = string.IsNullOrWhiteSpace(i.Info.Url)
@@ -57,9 +65,13 @@ namespace GitCheckoutManager.Services
                         return new[] { head, "  " + FirstErrorLine(i.Error!) };
                     }));
 
+            Section(sb, "Skipped (uncommitted changes):",
+                list.Where(i => i.Skip == SubmoduleSkipReason.UncommittedChanges)
+                    .Select(i => new[] { i.Info.DisplayPath }));
+
             // No error text: typically failed during the clone script, whose output this window never saw.
             Section(sb, "Not initialized (may have failed during clone; run Initialize selected to see the error):",
-                list.Where(i => i.Info.State == SubmoduleState.NotInitialized && string.IsNullOrWhiteSpace(i.Error))
+                list.Where(i => i.Info.State == SubmoduleState.NotInitialized && string.IsNullOrWhiteSpace(i.Error) && i.Skip == SubmoduleSkipReason.None)
                     .Select(i => new[]
                     {
                         string.IsNullOrWhiteSpace(i.Info.Url)

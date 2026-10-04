@@ -197,4 +197,40 @@ public class TreeSearchTests
         // Matched via path, but the match does not reach its name
         Assert.Equal(string.Empty, t.Api.NameMatch);
     }
+
+    [Theory]
+    [InlineData(-1, 3, true, 0)]
+    [InlineData(-1, 3, false, 2)]
+    [InlineData(0, 3, true, 1)]
+    [InlineData(2, 3, true, 0)]
+    [InlineData(0, 3, false, 2)]
+    [InlineData(2, 3, false, 1)]
+    [InlineData(0, 1, true, 0)]
+    [InlineData(0, 1, false, 0)]
+    [InlineData(5, 3, true, 0)]
+    public void NextIndex_wraps_around(int current, int count, bool forward, int expected)
+    {
+        Assert.Equal(expected, TreeSearch.NextIndex(current, count, forward));
+    }
+
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(3, true)]
+    public void NextIndex_is_minus_one_without_matches(int current, bool forward)
+    {
+        Assert.Equal(-1, TreeSearch.NextIndex(current, 0, forward));
+    }
+
+    [Fact]
+    public void FindMatches_returns_matches_in_tree_order()
+    {
+        var t = new Tree();
+        var matches = TreeSearch.FindMatches(t.Roots, "api");
+
+        Assert.Equal(new[] { t.Api }, matches);
+        Assert.Equal(new[] { t.Controllers, t.UserController, t.Core }, TreeSearch.FindMatches(t.Roots, "c"));
+        Assert.Empty(TreeSearch.FindMatches(t.Roots, ""));
+        Assert.Empty(TreeSearch.FindMatches(t.Roots, "zzz"));
+    }
 }

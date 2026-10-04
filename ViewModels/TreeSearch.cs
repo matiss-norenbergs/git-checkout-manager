@@ -77,6 +77,35 @@ namespace GitCheckoutManager.ViewModels
             return new TreeSearchResult(matches.Count, expand);
         }
 
+        /// <summary>Every node matching the filter, in tree (pre-)order. Empty for an empty filter.</summary>
+        public static List<TreeNodeViewModel> FindMatches(IEnumerable<TreeNodeViewModel> roots, string filter)
+        {
+            var matches = new List<TreeNodeViewModel>();
+            if (!string.IsNullOrEmpty(filter))
+                Collect(roots, filter, matches);
+            return matches;
+        }
+
+        /// <summary>
+        /// The match to select after <paramref name="current"/> (-1 = none yet): wraps around at both ends,
+        /// starts at the first match going forward and the last going backward, and is -1 when there are no matches.
+        /// </summary>
+        public static int NextIndex(int current, int count, bool forward)
+        {
+            if (count <= 0) return -1;
+            if (current < 0 || current >= count) return forward ? 0 : count - 1;
+            return forward ? (current + 1) % count : (current - 1 + count) % count;
+        }
+
+        private static void Collect(IEnumerable<TreeNodeViewModel> nodes, string filter, List<TreeNodeViewModel> matches)
+        {
+            foreach (var node in nodes)
+            {
+                if (Matches(node, filter)) matches.Add(node);
+                Collect(node.Children, filter, matches);
+            }
+        }
+
         /// <summary>Shows every node and removes highlights.</summary>
         public static void Clear(IEnumerable<TreeNodeViewModel> roots)
         {

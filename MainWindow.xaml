@@ -52,6 +52,7 @@
         <!-- Tree item style – applies recursively through HierarchicalDataTemplate -->
         <Style x:Key="TreeItemStyle" TargetType="TreeViewItem">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
             <Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVis}}"/>
         </Style>
 
@@ -526,7 +527,8 @@
                             <TextBox Grid.Column="1" x:Name="TreeSearchBox"
                                      Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalAlignment="Center" Padding="5,4"
-                                     ToolTip="Type to filter. Include '/' to match the full path."/>
+                                     PreviewKeyDown="TreeSearchBox_PreviewKeyDown"
+                                     ToolTip="Type to filter. Include '/' to match the full path. Enter: next match, Shift+Enter: previous."/>
                             <TextBlock Grid.Column="2" Text="{Binding SearchResultText}"
                                        Margin="8,0,0,0" MaxWidth="240" FontSize="12"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -602,7 +604,7 @@
                                Foreground="{DynamicResource MutedTextBrush}"
                                Visibility="{Binding IsFullClone, Converter={StaticResource BoolToVis}}"/>
 
-                    <TreeView ItemsSource="{Binding TreeNodes}"
+                    <TreeView x:Name="MainTree" ItemsSource="{Binding TreeNodes}"
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"

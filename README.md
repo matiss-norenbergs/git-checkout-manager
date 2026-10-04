@@ -73,7 +73,7 @@ A classic token with the `repo` scope also works, but grants much more than the 
 
 ### 1. Choose the source
 
-Pick a **Repository** and a **Branch**. Both dropdowns can be filtered by typing.
+Pick a **Repository** and a **Branch**. Both are searchable pickers: type to filter the list, then pick an entry.
 
 The folder tree loads automatically. The app downloads only the repository's **folder structure** (no file contents, typically a few hundred KB to a few MB), so even very large repositories load in seconds. The result is cached per commit, so switching back to a branch you've already viewed is instant.
 
@@ -82,7 +82,7 @@ The folder tree loads automatically. The app downloads only the repository's **f
 
 ### 2. Choose the folders
 
-Tick folders in the tree. Use **Search** to find folders by name.
+Tick folders in the tree. Use **Search** to find folders by name. The tree is filtered as you type and the match count is shown next to the box. Press **Enter** to select and scroll to the next match (it wraps around at the end) and **Shift+Enter** for the previous one; the counter then reads e.g. *3 / 12*. Search works the same in the Clone and Manage tabs.
 
 - **Only folders can be selected.** Files show their status instead:
   - **normal text** means the file will be included
@@ -204,7 +204,7 @@ Submodules inside populated submodules (*Ready*, *On a different commit* or *Clo
    - **Include nested submodules**: also initializes submodules inside submodules.
 3. Click **Initialize selected**.
 
-Submodules are processed **one at a time**, so one broken submodule never blocks the others. Each row shows its progress (*Queued → Working… → Ready* or *Failed*). Failed rows keep their Git error under **Error details**. **Cancel** stops the run cleanly.
+Submodules are processed **one at a time**, so one broken submodule never blocks the others. Each row shows its progress (*Queued → Working… → Ready*, *Failed* or *Skipped*). Failed rows keep their Git error under **Error details**. A row is shown as *Skipped* (grey, not red) when the safety check left it alone on purpose: it has uncommitted changes, or you answered *No* to the question about a commit that isn't on any branch. The reason is kept under **Error details**, and the summary counts these separately (*"Initialized 1 of 2. 1 skipped: external/lib"*). Only real Git errors are shown as *Failed*. **Cancel** stops the run cleanly.
 
 Submodules on your connected GitLab/GitHub server use your saved token. For a submodule on another server, Git Credential Manager may ask you to sign in.
 
@@ -229,10 +229,11 @@ Each row shows **on <branch>** or **detached** under its pinned/current commits.
 
 ### Copy report
 
-**Copy report** (bottom of the window, enabled when any row is *Missing from .gitmodules*, failed, has a locally overridden URL, or was cloned manually) copies a plain-text summary to the clipboard, ready to send to the repository maintainer: the repository, branch and commit, then up to three sections, each shown only if it has entries:
+**Copy report** (bottom of the window, enabled when any row is *Missing from .gitmodules*, failed, has a locally overridden URL, or was cloned manually) copies a plain-text summary to the clipboard, ready to send to the repository maintainer: the repository, branch and commit, then up to four sections, each shown only if it has entries:
 
 - *Missing from .gitmodules*: paths that need an entry in the repository, with their pinned commit.
 - *Failed to initialize*: the URL and the first `fatal:`/`error:` line of Git's message.
+- *Skipped (uncommitted changes)*: rows left alone because they have uncommitted changes. Rows skipped because you declined the unreferenced-commit question are not listed.
 - *Fixed locally in this checkout*: URL overrides and manual clones that the repository itself still needs fixing for.
 
 Credentials embedded in URLs and token values are removed from the report. The window confirms with *"Report copied to the clipboard."*.

@@ -37,6 +37,7 @@ namespace GitCheckoutManager
 
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.MatchNavigated += OnMatchNavigated;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
         }
@@ -51,6 +52,68 @@ namespace GitCheckoutManager
                 TreeSearchBox.SelectAll();
                 e.Handled = true;
             }
+        }
+
+        private void TreeSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key != System.Windows.Input.Key.Enter) return;
+
+            var backward = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0;
+            if (backward) _viewModel.PreviousMatchCommand.Execute(null);
+            else _viewModel.NextMatchCommand.Execute(null);
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// Brings a match into view. The tree is virtualized, so each level's container may not exist yet:
+        /// scroll the parent's panel to the child's index first, then take the realized container.
+        /// </summary>
+        private void OnMatchNavigated(TreeNodeViewModel node)
+        {
+            var chain = new List<TreeNodeViewModel>();
+            for (var n = node; n != null; n = n.Parent) chain.Insert(0, n);
+
+            ItemsControl current = MainTree;
+            TreeViewItem? container = null;
+            foreach (var item in chain)
+            {
+                current.UpdateLayout();
+                container = current.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                if (container == null)
+                {
+                    var index = current.Items.IndexOf(item);
+                    if (index >= 0 && FindItemsPanel(current) is VirtualizingStackPanel panel)
+                    {
+                        panel.BringIndexIntoViewPublic(index);
+                        current.UpdateLayout();
+                        container = current.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                    }
+                }
+                if (container == null) return;
+                current = container;
+            }
+
+            container?.BringIntoView();
+        }
+
+        private static Panel? FindItemsPanel(ItemsControl control)
+        {
+            var presenter = FindDescendant<ItemsPresenter>(control);
+            return presenter != null && System.Windows.Media.VisualTreeHelper.GetChildrenCount(presenter) > 0
+                ? System.Windows.Media.VisualTreeHelper.GetChild(presenter, 0) as Panel
+                : null;
+        }
+
+        private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+        {
+            for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+                if (child is T match) return match;
+                var nested = FindDescendant<T>(child);
+                if (nested != null) return nested;
+            }
+            return null;
         }
 
         private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

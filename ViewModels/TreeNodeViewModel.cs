@@ -12,6 +12,7 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty] private bool? _isChecked = false;
         [ObservableProperty] private bool _isExpanded = false;
         [ObservableProperty] private bool _isVisible = true;
+        [ObservableProperty] private bool _isSelected;
 
         public string Name { get; private set; } = string.Empty;
         public string FullPath { get; private set; } = string.Empty;
