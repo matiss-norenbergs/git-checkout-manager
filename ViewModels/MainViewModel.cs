@@ -1070,7 +1070,7 @@ namespace GitCheckoutManager.ViewModels
             var message = $"{(full ? "Full clone of" : "Clone")} {SelectedRepository?.Name} @ {SelectedBranch?.Name} into\n{targetPath}";
             if (newBranch != null) message += $"\nand create branch {newBranch}";
 
-            if (!_dialogService.ShowConfirmation(message + "?", "Execute Script"))
+            if (!_dialogService.ShowConfirmation("Execute Script", message + "?"))
                 return;
 
             DismissSubmoduleBar();
@@ -1424,7 +1424,7 @@ namespace GitCheckoutManager.ViewModels
                 entry.IsMissing = true;
                 StatusMessage = $"This checkout no longer exists: {entry.Path}";
 
-                if (_dialogService.ShowConfirmation("Remove it from the recent list?", "Missing checkout"))
+                if (_dialogService.ShowConfirmation("Missing checkout", "Remove it from the recent list?"))
                     RemoveRecentCheckout(entry);
                 else
                     RebuildRecentCheckouts(selectPath: CheckoutInfo?.Root);
@@ -1554,8 +1554,8 @@ namespace GitCheckoutManager.ViewModels
                 if (review == null || !review.HasAnyFiles)
                 {
                     if (!_dialogService.ShowConfirmation(
-                            $"Add {added.Count} folder(s), remove {removed.Count} folder(s) from {root}?",
-                            "Apply sparse-checkout changes"))
+                            "Apply sparse-checkout changes",
+                            $"Add {added.Count} folder(s), remove {removed.Count} folder(s) from {root}?"))
                         return;
 
                     choices = new RemovalReviewChoices(false, false, false);
@@ -1570,9 +1570,10 @@ namespace GitCheckoutManager.ViewModels
                                   + (choices.DeleteChanged ? review.ChangedFiles.Count : 0);
 
                     if (permanent > 0 && !_dialogService.ShowConfirmation(
+                            "Confirm permanent deletion",
                             $"{permanent} changed/untracked file(s) in the removed folders will be permanently " +
                             "deleted from disk.\nThis cannot be undone. Continue?",
-                            "Confirm permanent deletion"))
+                            destructive: true))
                         return;
                 }
 
@@ -1701,7 +1702,7 @@ namespace GitCheckoutManager.ViewModels
             if (info == null || !info.IsSparse) return;
 
             if (!_dialogService.ShowConfirmation(
-                    "This checks out ALL files of the repository. Continue?", "Disable sparse checkout"))
+                    "Disable sparse checkout", "This checks out ALL files of the repository. Continue?"))
                 return;
 
             IsLoading = true;
@@ -1979,7 +1980,7 @@ namespace GitCheckoutManager.ViewModels
             var existing = AvailablePresets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
-                if (!_dialogService.ShowConfirmation($"Overwrite preset \"{existing.Name}\"?", "Overwrite Preset"))
+                if (!_dialogService.ShowConfirmation("Overwrite Preset", $"Overwrite preset \"{existing.Name}\"?"))
                     return;
                 existing.Paths = paths;
             }
@@ -2024,7 +2025,7 @@ namespace GitCheckoutManager.ViewModels
         private void DeletePreset()
         {
             if (SelectedPreset == null) return;
-            if (!_dialogService.ShowConfirmation($"Delete preset \"{SelectedPreset.Name}\"?", "Delete Preset"))
+            if (!_dialogService.ShowConfirmation("Delete Preset", $"Delete preset \"{SelectedPreset.Name}\"?", destructive: true))
                 return;
             var name = SelectedPreset.Name;
             AvailablePresets.Remove(SelectedPreset);

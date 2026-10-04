@@ -107,15 +107,9 @@ namespace GitCheckoutManager.ViewModels
 
         public bool HasBranchLine => BranchLineText.Length > 0;
 
-        /// <summary>This submodule was switched from this window (kept across reloads by the view model).</summary>
-        public bool WasSwitched { get; set; }
-
-        public bool ShowMovedNote => WasSwitched && State == SubmoduleState.DifferentCommit;
+        public bool ShowMovedNote => State == SubmoduleState.DifferentCommit;
 
         public string MovedNoteText => "Moved from the recorded commit — the main repo will show this submodule as changed.";
-
-        public string MovedNoteToolTip =>
-            "Committing in the main repository would record the new commit of this submodule for everyone.";
 
         /// <summary>Why the last action on this submodule failed. Empty until an action fills it.</summary>
         [ObservableProperty]
@@ -197,9 +191,6 @@ namespace GitCheckoutManager.ViewModels
 
         /// <summary>Last failure text per path. Survives the reload after a run, so failed rows keep their error.</summary>
         private readonly Dictionary<string, string> _errors = new(StringComparer.Ordinal);
-
-        /// <summary>Rows whose branch was switched here; they keep the "moved from the recorded commit" note after a reload.</summary>
-        private readonly HashSet<string> _switched = new(StringComparer.Ordinal);
 
         public SubmodulesViewModel(ISubmoduleService submoduleService, string root,
             Func<string, GitAuth?> resolveAuth, IDialogService dialogService,
@@ -349,7 +340,6 @@ namespace GitCheckoutManager.ViewModels
         private SubmoduleRowViewModel CreateRow(SubmoduleInfo info)
         {
             var row = new SubmoduleRowViewModel(info) { IsLocked = IsRunning };
-            row.WasSwitched = _switched.Contains(info.DisplayPath.Length > 0 ? info.DisplayPath : info.Path);
             var key = info.DisplayPath.Length > 0 ? info.DisplayPath : info.Path;
             if (_errors.TryGetValue(key, out var error)) row.Error = error;
 
@@ -522,7 +512,7 @@ namespace GitCheckoutManager.ViewModels
         private async Task ResetUrlAsync(SubmoduleRowViewModel? row)
         {
             if (row == null) return;
-            if (!_dialogService.ShowConfirmation("Use the URL from .gitmodules again?", "Reset URL")) return;
+            if (!_dialogService.ShowConfirmation("Reset URL", "Use the URL from .gitmodules again?")) return;
 
             await RunRowActionAsync(row, "Reset URL for",
                 ct => _submoduleService.ResetUrlAsync(row.Info.RepoRoot, row.Info, ct));
@@ -534,10 +524,10 @@ namespace GitCheckoutManager.ViewModels
             if (row == null) return;
 
             if (!_dialogService.ShowConfirmation(
+                    "Clone manually",
                     $"This repository has no .gitmodules entry for {row.DisplayPath}. The app will clone the repository " +
                     $"you choose into that folder at the commit the main repo expects ({row.PinnedShortSha}). " +
-                    "Git won't treat it as a registered submodule.",
-                    "Clone manually"))
+                    "Git won't treat it as a registered submodule."))
                 return;
 
             var url = PickUrl(row);
@@ -566,16 +556,13 @@ namespace GitCheckoutManager.ViewModels
             if (branch == null) return;
 
             if (check.UnreferencedCommits && !_dialogService.ShowConfirmation(
-                    $"The current commit in {row.DisplayPath} isn't on any branch. After switching it will be hard to find. Continue?",
-                    "Switch branch"))
+                    "Switch branch",
+                    $"The current commit in {row.DisplayPath} isn't on any branch. After switching it will be hard to find. Continue?"))
                 return;
 
-            await RunRowActionAsync(row, "Switched", async ct =>
-            {
-                var result = await _submoduleService.SwitchBranchAsync(row.Info, branch, _resolveAuth, ct);
-                if (result.ExitCode == 0) _switched.Add(row.DisplayPath);
-                return result;
-            }, showNote: true);
+            await RunRowActionAsync(row, "Switched",
+                ct => _submoduleService.SwitchBranchAsync(row.Info, branch, _resolveAuth, ct),
+                showNote: true);
         }
 
         [RelayCommand(CanExecute = nameof(CanRowAction))]
@@ -586,8 +573,9 @@ namespace GitCheckoutManager.ViewModels
             if (await CheckSafetyAsync(row) == null) return;
 
             if (!_dialogService.ShowConfirmation(
+                    "Reset to recorded commit",
                     $"Move {row.DisplayPath} back to {row.PinnedShortSha}, the commit the main repo expects?",
-                    "Reset to recorded commit"))
+                    destructive: true))
                 return;
 
             await RunRowActionAsync(row, "Reset", ct => _submoduleService.ResetToRecordedAsync(row.Info, ct));
@@ -611,8 +599,9 @@ namespace GitCheckoutManager.ViewModels
                            (more > 0 ? $"{Environment.NewLine}…and {more} more" : string.Empty);
 
                 _dialogService.ShowMessage(
-                    $"Commit or discard these changes in {row.DisplayPath} first.{Environment.NewLine}{Environment.NewLine}{list}",
-                    "Uncommitted changes");
+                    "Uncommitted changes",
+                    $"Commit or discard these changes in {row.DisplayPath} first.",
+                    list);
                 return null;
             }
             catch (OperationCanceledException)
@@ -631,9 +620,9 @@ namespace GitCheckoutManager.ViewModels
         }
 
         private bool ConfirmLatest() => _dialogService.ShowConfirmation(
+            "Latest from branch",
             "Latest from branch moves submodules away from the commit the main repo expects. " +
-            "The main repo will then show them as changed. Continue?",
-            "Latest from branch");
+            "The main repo will then show them as changed. Continue?");
 
         private string? PickUrl(SubmoduleRowViewModel row) => _dialogService.ShowSubmoduleUrl(new SubmoduleUrlModel
         {

@@ -69,14 +69,16 @@
                 Background="{DynamicResource SubPanelBackgroundBrush}"
                 BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1">
             <Grid>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Rows}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              FocusVisualStyle="{x:Null}">
+                    <ItemsControl ItemsSource="{Binding Rows}" FocusVisualStyle="{x:Null}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Padding="10,8" BorderThickness="0,0,0,1"
                                         BorderBrush="{DynamicResource PanelBorderBrush}">
                                     <Grid>
                                         <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
@@ -119,6 +121,14 @@
                                                      Foreground="{DynamicResource WindowForegroundBrush}"/>
                                         </Expander>
 
+                                        <!-- Moved note: own row under State, Commits and URL; single line, full text in the tooltip -->
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="3" Margin="0,4,0,0"
+                                                   Text="{Binding MovedNoteText}" FontSize="11.5"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding MovedNoteText}"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   Visibility="{Binding ShowMovedNote, Converter={StaticResource BoolToVis}}"/>
+
                                         <StackPanel Grid.Column="2" Margin="0,0,12,0">
                                             <TextBlock Text="{Binding DisplayStateText}"
                                                        FontWeight="SemiBold" TextWrapping="Wrap"
@@ -127,10 +137,6 @@
                                             <TextBlock Text="{Binding StateText}" FontSize="11.5" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource MutedTextBrush}"
                                                        Visibility="{Binding ShowUnderlyingState, Converter={StaticResource BoolToVis}}"/>
-                                            <TextBlock Text="{Binding MovedNoteText}" FontSize="11.5" TextWrapping="Wrap"
-                                                       ToolTip="{Binding MovedNoteToolTip}"
-                                                       Foreground="{DynamicResource MutedTextBrush}"
-                                                       Visibility="{Binding ShowMovedNote, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="3" Margin="0,0,12,0">

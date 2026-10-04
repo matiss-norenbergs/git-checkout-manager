@@ -219,6 +219,11 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
     </Style>
 
+    <Style x:Key="DangerActionButton" TargetType="Button" BasedOn="{StaticResource ColoredActionButtonBase}">
+        <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+    </Style>
+
     <!-- Section expander (Script panel, error details): small triangle plus text header. The triangle points the way the content will open: set ExpandDirection="Up" for a panel that grows upward (Script), leave it at Down otherwise. -->
     <Style x:Key="SectionExpander" TargetType="Expander">
         <Setter Property="Template">

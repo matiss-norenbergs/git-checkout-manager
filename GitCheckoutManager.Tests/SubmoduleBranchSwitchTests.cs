@@ -290,8 +290,13 @@ public class SubmoduleBranchSwitchTests
         public int PickerCalls { get; private set; }
 
         public string? ShowSubmoduleBranch(SubmoduleBranchModel model) { PickerCalls++; return BranchToPick; }
-        public void ShowMessage(string message, string title) => Messages.Add(message);
-        public bool ShowConfirmation(string message, string title) { Confirmations.Add(message); return Confirm; }
+        public List<string?> MessageDetails { get; } = new();
+        public void ShowMessage(string title, string message, string? details = null)
+        {
+            Messages.Add(message);
+            MessageDetails.Add(details);
+        }
+        public bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false) { Confirmations.Add(message); return Confirm; }
 
         public string? ShowSaveFileDialog(string filter, string defaultExtension, string defaultFileName) => throw new NotSupportedException();
         public string? ShowOpenFileDialog(string filter, string title = "Open File") => throw new NotSupportedException();
@@ -339,7 +344,8 @@ public class SubmoduleBranchSwitchTests
         Assert.Equal(0, dialogs.PickerCalls);
         var message = Assert.Single(dialogs.Messages);
         Assert.Contains("Commit or discard these changes in external/lib first.", message);
-        Assert.Contains("a.txt", message);
+        Assert.DoesNotContain("a.txt", message);
+        Assert.Contains("a.txt", Assert.Single(dialogs.MessageDetails));
     }
 
     [RequiresGitFact]
