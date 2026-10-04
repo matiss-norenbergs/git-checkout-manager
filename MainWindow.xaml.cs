@@ -16,6 +16,7 @@ namespace GitCheckoutManager
         {
             InitializeComponent();
             SourceInitialized += OnSourceInitialized;
+            PreviewKeyDown += OnWindowPreviewKeyDown;
 
             var hostFactory     = new GitHostServiceFactory();
             var commandGen      = new CommandGenerator();
@@ -38,6 +39,18 @@ namespace GitCheckoutManager
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
+        }
+
+        private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.F &&
+                System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control &&
+                TreeSearchBox.IsVisible)
+            {
+                TreeSearchBox.Focus();
+                TreeSearchBox.SelectAll();
+                e.Handled = true;
+            }
         }
 
         private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

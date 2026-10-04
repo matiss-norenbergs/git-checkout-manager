@@ -74,14 +74,6 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(NewBranchHint))]
         private Branch? _selectedBranch;
-        [ObservableProperty] private string _branchFilterText = string.Empty;
-        [ObservableProperty] private string _repositoryFilterText = string.Empty;
-
-        private ICollectionView? _branchesView;
-        public ICollectionView? BranchesView => _branchesView;
-
-        private ICollectionView? _repositoriesView;
-        public ICollectionView? RepositoriesView => _repositoriesView;
 
         // ── Tree ──────────────────────────────────────────────────────────────
         [ObservableProperty] private ObservableCollection<TreeNodeViewModel> _treeNodes = new();
@@ -318,12 +310,6 @@ namespace GitCheckoutManager.ViewModels
 
             _hostService = _hostServiceFactory.Create(SelectedHostType);
 
-            _branchesView = CollectionViewSource.GetDefaultView(Branches);
-            _branchesView.Filter = FilterBranch;
-
-            _repositoriesView = CollectionViewSource.GetDefaultView(Repositories);
-            _repositoriesView.Filter = FilterRepository;
-
             RecentCheckouts = new ObservableCollection<RecentCheckout>(_appSettings.RecentCheckouts);
             RefreshRecentCheckoutState();
 
@@ -363,6 +349,8 @@ namespace GitCheckoutManager.ViewModels
                 _hostService = _hostServiceFactory.Create(newValue);
 
                 IsConnected = false;
+                SelectedRepository = null;
+                SelectedBranch = null;
                 Repositories.Clear();
                 Branches.Clear();
                 _tabs.Clone.Clear();
@@ -671,18 +659,8 @@ namespace GitCheckoutManager.ViewModels
             DebounceApplyFilter(value);
         }
 
-        partial void OnBranchFilterTextChanged(string value)
-        {
-            _branchesView?.Refresh();
-            if (string.IsNullOrWhiteSpace(value) && SelectedBranch != null)
-                SelectedBranch = null;
-        }
-
         partial void OnSelectedBranchChanged(Branch? value)
         {
-            if (BranchFilterText != (value?.Name ?? string.Empty))
-                BranchFilterText = value?.Name ?? string.Empty;
-
             if (value != null && IsCloneMode)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
 
@@ -690,18 +668,8 @@ namespace GitCheckoutManager.ViewModels
             ScheduleRegenerate();
         }
 
-        partial void OnRepositoryFilterTextChanged(string value)
-        {
-            _repositoriesView?.Refresh();
-            if (string.IsNullOrWhiteSpace(value) && SelectedRepository != null)
-                SelectedRepository = null;
-        }
-
         partial void OnSelectedRepositoryChanged(Repository? value)
         {
-            if (RepositoryFilterText != (value?.PathWithNamespace ?? string.Empty))
-                RepositoryFilterText = value?.PathWithNamespace ?? string.Empty;
-
             if (value != null)
                 _ = LoadBranchesAsync();
 
@@ -729,6 +697,8 @@ namespace GitCheckoutManager.ViewModels
                 _hostService.Configure(ServerUrl, Token);
                 var repos = await _hostService.GetRepositoriesAsync();
 
+                SelectedRepository = null;
+                SelectedBranch = null;
                 Repositories.Clear();
                 foreach (var repo in repos)
                     Repositories.Add(repo);
@@ -754,21 +724,13 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
-        private bool FilterBranch(object obj) =>
-            obj is Branch b && (string.IsNullOrEmpty(BranchFilterText) ||
-            b.Name.Contains(BranchFilterText, StringComparison.OrdinalIgnoreCase));
-
-        private bool FilterRepository(object obj) =>
-            obj is Repository r && (string.IsNullOrEmpty(RepositoryFilterText) ||
-            r.PathWithNamespace.Contains(RepositoryFilterText, StringComparison.OrdinalIgnoreCase));
-
         private async Task LoadBranchesAsync()
         {
             if (SelectedRepository == null) return;
 
             IsLoading = true;
             StatusMessage = "Loading branches…";
-            BranchFilterText = string.Empty;
+            SelectedBranch = null;
             Branches.Clear();
             // Drop the previous repository's nodes so its selection cannot leak into the new tree
             _tabs.Clone.Clear();

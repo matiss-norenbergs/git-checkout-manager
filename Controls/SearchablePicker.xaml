@@ -1,0 +1,103 @@
+<UserControl x:Class="GitCheckoutManager.Controls.SearchablePicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GitCheckoutManager.Controls"
+             Focusable="False" IsTabStop="False"
+             Foreground="{DynamicResource ControlForegroundBrush}"
+             Background="{DynamicResource ControlBackgroundBrush}"
+             BorderBrush="{DynamicResource ControlBorderBrush}"
+             BorderThickness="1" Padding="0">
+    <UserControl.Resources>
+        <local:InverseBoolConverter x:Key="InverseBool"/>
+        <Style x:Key="PickerListBoxItem" TargetType="ListBoxItem">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" Padding="8,3">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionTextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="PickerEntryTemplate" DataType="{x:Type local:PickerEntry}">
+            <local:HighlightTextBlock SourceText="{Binding Text}" Query="{Binding Query}"
+                                      TextTrimming="CharacterEllipsis"
+                                      Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"/>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <ToggleButton x:Name="FaceToggle" MinHeight="24" Background="Transparent"
+                      FocusVisualStyle="{x:Null}" KeyboardNavigation.AcceptsReturn="True"
+                      HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                      IsChecked="{Binding IsOpen, ElementName=PART_Popup, Mode=TwoWay}"
+                      IsHitTestVisible="{Binding IsOpen, ElementName=PART_Popup, Converter={StaticResource InverseBool}}">
+            <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="{TemplateBinding Background}">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </ToggleButton.Template>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="28"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="FaceText" Grid.Column="0" Margin="8,4,4,4" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <Border x:Name="Arrow" Grid.Column="1" Background="{DynamicResource ControlHoverBrush}"
+                        BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=local:SearchablePicker}}"
+                        BorderThickness="1,0,0,0">
+                    <TextBlock Text="▼" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ControlForegroundBrush}"/>
+                </Border>
+            </Grid>
+        </ToggleButton>
+
+        <Popup x:Name="PART_Popup" PlacementTarget="{Binding ElementName=FaceToggle}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+               Opened="PickerPopup_Opened" Closed="PickerPopup_Closed">
+            <Border x:Name="PopupRoot"
+                    Background="{DynamicResource DialogBackgroundBrush}"
+                    BorderBrush="{DynamicResource DialogBorderBrush}"
+                    BorderThickness="1" Padding="6"
+                    PreviewKeyDown="PopupRoot_PreviewKeyDown">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                        <TextBox x:Name="SearchBox" Padding="5,4" VerticalContentAlignment="Center"
+                                 TextChanged="SearchBox_TextChanged"/>
+                        <TextBlock x:Name="SearchHint" Margin="9,0,0,0" VerticalAlignment="Center"
+                                   IsHitTestVisible="False" Foreground="{DynamicResource MutedTextBrush}"/>
+                    </Grid>
+                    <Grid>
+                        <ListBox x:Name="List" MaxHeight="300"
+                                 Focusable="False" IsTabStop="False" BorderThickness="0"
+                                 Background="Transparent"
+                                 ItemTemplate="{StaticResource PickerEntryTemplate}"
+                                 ItemContainerStyle="{StaticResource PickerListBoxItem}"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseLeftButtonUp="List_PreviewMouseLeftButtonUp"/>
+                        <TextBlock x:Name="NoMatches" Text="No matches" Margin="8,6"
+                                   Foreground="{DynamicResource MutedTextBrush}" Visibility="Collapsed"/>
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>
