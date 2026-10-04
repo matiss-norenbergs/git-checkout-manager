@@ -127,6 +127,10 @@
                                             <TextBlock Text="{Binding StateText}" FontSize="11.5" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource MutedTextBrush}"
                                                        Visibility="{Binding ShowUnderlyingState, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock Text="{Binding MovedNoteText}" FontSize="11.5" TextWrapping="Wrap"
+                                                       ToolTip="{Binding MovedNoteToolTip}"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Visibility="{Binding ShowMovedNote, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="3" Margin="0,0,12,0">
@@ -136,6 +140,9 @@
                                             <TextBlock FontFamily="Consolas" FontSize="12">
                                                 <Run Text="current " Foreground="{DynamicResource MutedTextBrush}"/><Run Text="{Binding CurrentShortSha, Mode=OneWay}"/>
                                             </TextBlock>
+                                            <TextBlock Text="{Binding BranchLineText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource MutedTextBrush}"
+                                                       Visibility="{Binding HasBranchLine, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="4">
@@ -171,6 +178,14 @@
                                                     <MenuItem Header="Clone manually…"
                                                               Visibility="{Binding CanCloneManually, Converter={StaticResource BoolToVis}}"
                                                               Command="{Binding PlacementTarget.Tag.CloneManuallyCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Switch branch…"
+                                                              Visibility="{Binding CanSwitchBranch, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.SwitchBranchCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Reset to recorded commit"
+                                                              Visibility="{Binding CanResetToRecorded, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.ResetToRecordedCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                               CommandParameter="{Binding}"/>
                                                 </ContextMenu>
                                             </Button.ContextMenu>

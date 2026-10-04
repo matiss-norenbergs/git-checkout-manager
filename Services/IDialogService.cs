@@ -22,5 +22,11 @@ namespace GitCheckoutManager.Services
 
         /// <summary>Shows the repository picker and returns the chosen, reachable URL, or null when cancelled.</summary>
         string? ShowSubmoduleUrl(SubmoduleUrlModel model);
+
+        /// <summary>Shows the remote-branch picker and returns the chosen branch, or null when cancelled.</summary>
+        string? ShowSubmoduleBranch(SubmoduleBranchModel model);
+
+        /// <summary>Shows a message with an OK button.</summary>
+        void ShowMessage(string message, string title);
     }
 }

@@ -28,6 +28,7 @@ namespace GitCheckoutManager.Models
     /// <param name="RepoRoot">Absolute path of the repository that contains this submodule: the checkout root for top-level ones, the parent submodule's folder for nested ones.</param>
     /// <param name="DisplayPath">Forward slashes, relative to the checkout root (e.g. <c>external/lib/vendor/x</c>).</param>
     /// <param name="Depth">0 for a top-level submodule, 1 for one inside it, and so on.</param>
+    /// <param name="CurrentBranch">Local branch HEAD is on inside a populated submodule; null when detached (or not populated).</param>
     public sealed record SubmoduleInfo(
         string Path,
         string? Name,
@@ -40,7 +41,8 @@ namespace GitCheckoutManager.Models
         string? EffectiveUrl = null,
         string RepoRoot = "",
         string DisplayPath = "",
-        int Depth = 0)
+        int Depth = 0,
+        string? CurrentBranch = null)
     {
         /// <summary>The part of <see cref="DisplayPath"/> in front of <see cref="Path"/>, including its trailing slash; empty at depth 0.</summary>
         public string DisplayPrefix =>

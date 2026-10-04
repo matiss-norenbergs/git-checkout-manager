@@ -216,6 +216,17 @@ Each row has a **⋯** menu (disabled while a run is active). **None of these ac
 - **Reset URL** (only for overridden rows): removes the local override, so the row uses the URL from `.gitmodules` again.
 - **Clone manually…** (only for *Missing from .gitmodules* rows): clones the repository you choose into the (missing or empty) submodule folder and checks out the commit the main repository expects. The row becomes *Cloned manually*. If the clone fails, the folder is left empty as before. A non-empty folder is never touched.
 
+### Switching a submodule to a branch
+
+For submodules that are on disk (*Ready*, *On a different commit*, *Cloned manually*) the **⋯** menu also has:
+
+- **Switch branch…**: opens a list of the branches on the submodule's `origin` (loaded when the dialog opens; the current branch is highlighted, and you can filter). Pick one and click **Switch**. The app fetches that branch and checks it out: a new local branch that tracks `origin/<branch>`, or your existing local branch, fast-forwarded to origin. If your local branch has commits that aren't on origin, it is **left as it is** and the result says so. Nothing is ever discarded or overwritten.
+  - **Uncommitted changes block the switch.** The files are listed (first 50); commit or discard them in the submodule first.
+  - If the submodule is on a detached commit that belongs to no branch, you are asked to confirm, because that commit gets hard to find afterwards.
+- **Reset to recorded commit** (only when the submodule is not on the commit the main repository expects): detaches the submodule at that commit again, after the same uncommitted-changes check and a confirmation.
+
+Each row shows **on <branch>** or **detached** under its pinned/current commits. After a switch, a row on another commit says *"Moved from the recorded commit"*: the **main repository will show this submodule as changed**, and committing there would record the new commit for everyone. Use **Reset to recorded commit** to undo that. One submodule is handled at a time.
+
 ### Copy report
 
 **Copy report** (bottom of the window, enabled when any row is *Missing from .gitmodules*, failed, has a locally overridden URL, or was cloned manually) copies a plain-text summary to the clipboard, ready to send to the repository maintainer: the repository, branch and commit, then up to three sections, each shown only if it has entries:

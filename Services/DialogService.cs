@@ -69,6 +69,17 @@ namespace GitCheckoutManager.Services
             return window.ShowDialog() == true ? window.ChosenUrl : null;
         }
 
+        public string? ShowSubmoduleBranch(SubmoduleBranchModel model)
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            var window = new SubmoduleBranchWindow(model) { Owner = owner };
+            return window.ShowDialog() == true ? window.ChosenBranch : null;
+        }
+
+        public void ShowMessage(string message, string title) =>
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")
         {
             var textBox = new TextBox
