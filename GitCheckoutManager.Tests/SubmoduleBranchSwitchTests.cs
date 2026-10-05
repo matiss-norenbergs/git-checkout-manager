@@ -686,4 +686,93 @@ public class SubmoduleBranchSwitchTests
         Assert.Empty(dialogs.Confirmations);
         Assert.Equal(SubmoduleState.Ready, vm.Rows.Single().State);
     }
+
+    // ── Target radio: one property, survives close/reopen ────────────────
+
+    private static SubmodulesViewModel Reopen(SpyService spy, string main, FakeDialogs dialogs, AppSettings settings) =>
+        new(spy, main, NoAuth, dialogs, settings, new NullSettings());
+
+    /// <summary>A fresh clone of <paramref name="main"/>: the submodule is registered but empty (NotInitialized).</summary>
+    private static string FreshClone(GitFixture fx, string main)
+    {
+        var clone = Path.Combine(fx.Root, "clone");
+        GitFixture.Git(fx.Root, "clone", main, clone);
+        return clone;
+    }
+
+    [RequiresGitFact]
+    public async Task Target_is_pinned_after_initializing_closing_and_reopening()
+    {
+        using var fx = new GitFixture();
+        var main = FreshClone(fx, AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib"));
+        var settings = new AppSettings();
+        var spy = new SpyService();
+        var dialogs = new FakeDialogs();
+
+        var first = Reopen(spy, main, dialogs, settings);
+        await first.RefreshAsync();
+        Assert.Equal(SubmoduleTarget.Pinned, first.Target);
+        Assert.Equal(SubmoduleState.NotInitialized, first.Rows.Single().State);
+        foreach (var r in first.Rows) r.IsSelected = true;
+        await first.InitializeSelectedCommand.ExecuteAsync(null);
+        Assert.Equal(new[] { "external/lib" }, spy.InitPaths);
+
+        var second = Reopen(spy, main, dialogs, settings);
+        await second.RefreshAsync();
+        Assert.Equal(SubmoduleTarget.Pinned, second.Target);
+    }
+
+    [RequiresGitFact]
+    public async Task Target_latest_is_remembered_after_reopening()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib");
+        var settings = new AppSettings();
+        var spy = new SpyService();
+        var dialogs = new FakeDialogs();
+
+        var first = Reopen(spy, main, dialogs, settings);
+        first.Target = SubmoduleTarget.LatestFromBranch;
+
+        var second = Reopen(spy, main, dialogs, settings);
+        Assert.Equal(SubmoduleTarget.LatestFromBranch, second.Target);
+        Assert.True(settings.SubmoduleLatestFromBranch);
+
+        second.Target = SubmoduleTarget.Pinned;
+        Assert.Equal(SubmoduleTarget.Pinned, Reopen(spy, main, dialogs, settings).Target);
+        Assert.False(settings.SubmoduleLatestFromBranch);
+    }
+
+    [Fact]
+    public void Target_falls_back_to_the_legacy_bool_in_old_settings()
+    {
+        var spy = new SpyService();
+        var dialogs = new FakeDialogs();
+        var legacy = new AppSettings { SubmoduleLatestFromBranch = true };
+        Assert.Equal(SubmoduleTarget.LatestFromBranch, Reopen(spy, "unused", dialogs, legacy).Target);
+
+        // The new value wins once present.
+        var current = new AppSettings { SubmoduleTarget = SubmoduleTarget.Pinned, SubmoduleLatestFromBranch = true };
+        Assert.Equal(SubmoduleTarget.Pinned, Reopen(spy, "unused", dialogs, current).Target);
+    }
+
+    [RequiresGitFact]
+    public async Task Declining_the_latest_confirmation_leaves_the_selection_unchanged()
+    {
+        using var fx = new GitFixture();
+        var main = FreshClone(fx, AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib"));
+        var spy = new SpyService();
+        var dialogs = new FakeDialogs { Confirm = false };
+        var vm = Reopen(spy, main, dialogs, new AppSettings());
+        await vm.RefreshAsync();
+        Assert.Equal(SubmoduleState.NotInitialized, vm.Rows.Single().State);
+        vm.Target = SubmoduleTarget.LatestFromBranch;
+        foreach (var r in vm.Rows) r.IsSelected = true;
+
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+
+        Assert.Single(dialogs.Confirmations);
+        Assert.Empty(spy.InitPaths);
+        Assert.Equal(SubmoduleTarget.LatestFromBranch, vm.Target);
+    }
 }

@@ -232,7 +232,8 @@ namespace GitCheckoutManager.ViewModels
             _settingsService = settingsService;
 
             // Backing fields: restoring the saved choice must not write the settings file again.
-            _latestFromBranch = settings.SubmoduleLatestFromBranch;
+            _target = settings.SubmoduleTarget
+                ?? (settings.SubmoduleLatestFromBranch ? SubmoduleTarget.LatestFromBranch : SubmoduleTarget.Pinned);
             _includeNested = settings.SubmoduleIncludeNested;
             // Forced for this opening only: the backing field is set, so the saved preference is not touched.
             _showOnlyProblems = forceShowOnlyProblems || settings.SubmodulesShowOnlyProblems;
@@ -279,22 +280,15 @@ namespace GitCheckoutManager.ViewModels
 
         public bool HasResultText => ResultText.Length > 0;
 
-        [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(UsePinned))]
-        private bool _latestFromBranch;
-
-        /// <summary>Radio partner of <see cref="LatestFromBranch"/>; the other radio does the unsetting.</summary>
-        public bool UsePinned
-        {
-            get => !LatestFromBranch;
-            set { if (value) LatestFromBranch = false; }
-        }
+        /// <summary>The two radio buttons bind to this one property (via EnumToBoolConverter), so they cannot disagree.</summary>
+        [ObservableProperty] private SubmoduleTarget _target;
 
         [ObservableProperty] private bool _includeNested;
 
-        partial void OnLatestFromBranchChanged(bool value)
+        partial void OnTargetChanged(SubmoduleTarget value)
         {
-            _settings.SubmoduleLatestFromBranch = value;
+            _settings.SubmoduleTarget = value;
+            _settings.SubmoduleLatestFromBranch = value == SubmoduleTarget.LatestFromBranch;
             _settingsService.SaveSettings(_settings);
         }
 
@@ -417,7 +411,7 @@ namespace GitCheckoutManager.ViewModels
             var targets = SelectedRows();
             if (targets.Count == 0) return;
 
-            var latest = LatestFromBranch;
+            var latest = Target == SubmoduleTarget.LatestFromBranch;
             var nested = IncludeNested;
 
             if (latest && !ConfirmLatest()) return;
@@ -582,7 +576,7 @@ namespace GitCheckoutManager.ViewModels
         {
             if (row == null) return;
 
-            var latest = LatestFromBranch;
+            var latest = Target == SubmoduleTarget.LatestFromBranch;
             var nested = IncludeNested;
             if (latest && !ConfirmLatest()) return;
 
