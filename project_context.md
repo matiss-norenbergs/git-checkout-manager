@@ -32,7 +32,7 @@ Models/        AppSettings, Repository, Branch, TreeNode, TreePreset, RecentChec
 Services/      GitService (runner), GitLabHostService, GitHubHostService, GitHostServiceFactory,
                RemoteTreeService, CheckoutService, SubmoduleService, GitTreeParser,
                CommandGenerator, SettingsService, PresetService, DialogService, ClipboardService,
-               TitleBarColorizer   (+ an I* interface for most)
+               ShellLauncher/FolderOpener (open in Explorer/VS Code), TitleBarColorizer   (+ an I* interface for most)
 ViewModels/    MainViewModel (both tabs), TreeNodeViewModel, SettingsViewModel, SubmodulesViewModel
 Views/         SettingsWindow, RemovalReviewWindow, SubmodulesWindow, SubmoduleUrlWindow, SubmoduleBranchWindow, WindowSizing (helper)
 Themes/        LightTheme.xaml, DarkTheme.xaml (brushes + implicit control styles),
@@ -63,6 +63,7 @@ _bin/          prebuilt binaries, intentionally committed for now
 - Baseline = current sparse paths. Pending changes = Added/Removed vs baseline (with "covered by ancestor" logic).
 - Apply (`ExecuteManageApplyAsync`): review removed folders via `git status --porcelain=v1 -z --ignored=matching --untracked-files=all`, then the RemovalReviewWindow (ignored deleted by default, untracked/changed kept by default, second confirmation for destructive choices), then optional `git restore`, `git sparse-checkout set` (with auth), selective `git clean -ffdX/-ffd/-ffdx`, empty-dir cleanup, last-resort delete. Finally it **re-reads the checkout and reports what is actually on disk**. `sparse-checkout set` exits 0 even when it leaves files behind, so the report never trusts the exit code alone.
 - Leftovers that couldn't be deleted go into `CleanupLeftovers` and the **Retry cleanup** button.
+- **Open in Explorer / VS Code** (Manage tab tree menu, checkout bar, Submodules row ⋯ menu) goes through `IShellLauncher`/`ShellLauncher` (+ `FolderOpener`, fakeable `IShellEnvironment`): path normalised with `Path.GetFullPath`, one `ArgumentList` entry, `UseShellExecute = false`, never waited on, explorer.exe's exit code ignored (1 = success). VS Code is `Code.exe` resolved from `code.cmd` on PATH (one folder above `bin\`), then `%LocalAppData%`, then `%ProgramFiles%`; **never start `code.cmd`** (cmd.exe interprets `%`, `&`, `^`). "On disk" (`Directory.Exists`) is checked when the context menu opens (`TreeNodeViewModel.IsOnDisk`), Manage tree only.
 
 ### Submodules (`SubmoduleService`, `SubmodulesWindow`)
 - **Never use `git submodule status`:** it aborts on the first gitlink without a `.gitmodules` entry.

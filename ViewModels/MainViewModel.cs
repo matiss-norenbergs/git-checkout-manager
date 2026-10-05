@@ -19,6 +19,7 @@ namespace GitCheckoutManager.ViewModels
         private readonly ICommandGenerator _commandGenerator;
         private readonly ISettingsService _settingsService;
         private readonly ClipboardService _clipboardService;
+        private readonly FolderOpener _folderOpener;
         private readonly IDialogService _dialogService;
         private readonly IPresetService _presetService;
         private readonly IGitService _gitService;
@@ -151,7 +152,13 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
         [NotifyCanExecuteChangedFor(nameof(DisableSparseCheckoutCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInExplorerCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInVsCodeCommand))]
+        [NotifyPropertyChangedFor(nameof(HasOpenCheckout))]
         private CheckoutInfo? _checkoutInfo;
+
+        /// <summary>Enables the checkout bar's "Open" menu.</summary>
+        public bool HasOpenCheckout => CheckoutInfo != null;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
         [ObservableProperty] private RecentCheckout? _selectedRecentCheckout;
@@ -274,9 +281,11 @@ namespace GitCheckoutManager.ViewModels
             IRemoteTreeService remoteTreeService,
             ICheckoutService checkoutService,
             ISubmoduleService submoduleService,
-            IUpdateService updateService)
+            IUpdateService updateService,
+            IShellLauncher shellLauncher)
         {
             _updateService = updateService;
+            _folderOpener = new FolderOpener(shellLauncher);
             _updateChecker = new UpdateChecker(updateService,
                 message => StatusMessage = message,
                 version =>
@@ -1195,6 +1204,33 @@ namespace GitCheckoutManager.ViewModels
                 await ShowSubmodulesCoreAsync(onlyProblems: true);
         }
 
+        // ── Open in Explorer / VS Code ────────────────────────────────────────
+
+        /// <summary>False hides the VS Code actions.</summary>
+        public bool IsVsCodeAvailable => _folderOpener.IsVsCodeAvailable;
+
+        [RelayCommand(CanExecute = nameof(HasCheckout))]
+        private void OpenCheckoutInExplorer() => OpenFolder(string.Empty, vsCode: false);
+
+        [RelayCommand(CanExecute = nameof(HasCheckout))]
+        private void OpenCheckoutInVsCode() => OpenFolder(string.Empty, vsCode: true);
+
+        [RelayCommand]
+        private void OpenNodeInExplorer(TreeNodeViewModel? node) { if (node != null) OpenFolder(node.FullPath, vsCode: false); }
+
+        [RelayCommand]
+        private void OpenNodeInVsCode(TreeNodeViewModel? node) { if (node != null) OpenFolder(node.FullPath, vsCode: true); }
+
+        /// <summary>Called when a tree context menu opens (not when the tree loads): re-checks the disk for that folder.</summary>
+        public void RefreshNodeOnDisk(TreeNodeViewModel node) =>
+            node.IsOnDisk = _folderOpener.IsOnDisk(ManageRoot, node.FullPath);
+
+        private void OpenFolder(string relativePath, bool vsCode)
+        {
+            var error = _folderOpener.Open(ManageRoot, relativePath, vsCode);
+            if (error != null) StatusMessage = error;
+        }
+
         [RelayCommand(CanExecute = nameof(HasCheckout))]
         private Task ShowSubmodulesAsync() => ShowSubmodulesCoreAsync(onlyProblems: false);
 
@@ -1205,7 +1241,7 @@ namespace GitCheckoutManager.ViewModels
 
             var vm = new SubmodulesViewModel(
                 _submoduleService, root, ResolveAuthForRemote, _dialogService, _appSettings, _settingsService,
-                () => Repositories.ToList(), CheckoutInfo, _clipboardService.CopyText, onlyProblems);
+                () => Repositories.ToList(), CheckoutInfo, _clipboardService.CopyText, onlyProblems, _folderOpener);
             _ = vm.RefreshCommand.ExecuteAsync(null); // loads while the window opens; it reports its own errors
             _dialogService.ShowSubmodules(vm);
 

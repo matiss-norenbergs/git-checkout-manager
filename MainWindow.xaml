@@ -272,6 +272,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="8"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" Text="Checkout:" VerticalAlignment="Center"
@@ -315,6 +316,23 @@
                             Command="{Binding ShowSubmodulesCommand}"
                             Style="{StaticResource ActionButton}" Margin="0"
                             ToolTip="Show the submodules of this checkout and their state"/>
+                    <!-- The menu reaches the window's view model through the button's Tag. -->
+                    <Button Grid.Column="8" Content="Open &#x25BE;" Margin="8,0,0,0"
+                            Style="{StaticResource ActionButton}"
+                            IsEnabled="{Binding HasOpenCheckout}"
+                            Tag="{Binding}"
+                            Click="OpenMenuButton_Click"
+                            ToolTip="Open the checkout folder in…">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Open in Explorer"
+                                          Command="{Binding PlacementTarget.Tag.OpenCheckoutInExplorerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                <MenuItem Header="Open in VS Code"
+                                          Visibility="{Binding PlacementTarget.Tag.IsVsCodeAvailable, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BoolToVis}}"
+                                          Command="{Binding PlacementTarget.Tag.OpenCheckoutInVsCodeCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                 </Grid>
 
                 <TextBlock Text="{Binding CheckoutSummary}" Margin="0,6,0,0"
@@ -614,7 +632,27 @@
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}"
                                                       ItemContainerStyle="{StaticResource TreeItemStyle}">
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                <StackPanel Orientation="Horizontal" Margin="0,2"
+                                            Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                            ContextMenuOpening="TreeNodeMenu_Opening">
+                                    <!-- Manage tab, folders only (the handler cancels it otherwise). The menu reaches the window's view model through the Tag. -->
+                                    <StackPanel.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Open in Explorer"
+                                                      IsEnabled="{Binding IsOnDisk}"
+                                                      ToolTip="{Binding OnDiskToolTip}"
+                                                      ToolTipService.ShowOnDisabled="True"
+                                                      Command="{Binding PlacementTarget.Tag.OpenNodeInExplorerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding}"/>
+                                            <MenuItem Header="Open in VS Code"
+                                                      IsEnabled="{Binding IsOnDisk}"
+                                                      ToolTip="{Binding OnDiskToolTip}"
+                                                      ToolTipService.ShowOnDisabled="True"
+                                                      Visibility="{Binding PlacementTarget.Tag.IsVsCodeAvailable, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BoolToVis}}"
+                                                      Command="{Binding PlacementTarget.Tag.OpenNodeInVsCodeCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding}"/>
+                                        </ContextMenu>
+                                    </StackPanel.ContextMenu>
                                     <!-- Only folders are selectable: cone mode cannot take a file path -->
                                     <controls:TreeCheckBox IsChecked="{Binding IsChecked}"
                                               VerticalAlignment="Center"
