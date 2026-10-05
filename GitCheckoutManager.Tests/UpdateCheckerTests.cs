@@ -8,11 +8,16 @@ public class UpdateCheckerTests
     {
         public bool IsInstalled { get; set; } = true;
         public Func<Task<string?>> OnCheck { get; set; } = () => Task.FromResult<string?>(null);
-        public int Calls { get; private set; }
+        private int _calls;
+        public int Calls => Volatile.Read(ref _calls);
+
+        /// <summary>Completed once the service has been entered (the check runs on a thread-pool thread).</summary>
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<string?> CheckAndDownloadAsync()
         {
-            Calls++;
+            Interlocked.Increment(ref _calls);
+            Started.TrySetResult();
             return OnCheck();
         }
 
@@ -59,6 +64,7 @@ public class UpdateCheckerTests
         h.Service.OnCheck = () => gate.Task;
 
         var first = h.Checker.RunCheckAsync();
+        await h.Service.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(h.Checker.IsChecking);
         Assert.IsType<UpdateCheckOutcome.AlreadyChecking>(await h.Checker.RunCheckAsync());
         Assert.Equal(1, h.Service.Calls);
@@ -86,6 +92,7 @@ public class UpdateCheckerTests
         h.Service.OnCheck = () => gate.Task;
 
         var running = h.Checker.RunCheckAsync();
+        await h.Service.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await h.Checker.TickAsync();
         Assert.Equal(1, h.Service.Calls);
 
@@ -143,6 +150,7 @@ public class UpdateCheckerTests
         h.Service.OnCheck = () => gate.Task;
 
         var running = h.Checker.RunCheckAsync();
+        await h.Service.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("An update check is already running…", await h.Checker.RunManualCheckAsync());
         Assert.Equal(1, h.Service.Calls);
 
