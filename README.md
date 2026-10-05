@@ -31,7 +31,7 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 
 ### Installing
 
-Download `GitCheckoutManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-checkout-manager/releases); the app updates itself.
+Download `GitCheckoutManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-checkout-manager/releases); the app updates itself (it checks for a new version at startup and every 6 hours while running; you can also check in Settings).
 
 ---
 
