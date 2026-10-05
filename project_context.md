@@ -34,7 +34,7 @@ Services/      GitService (runner), GitLabHostService, GitHubHostService, GitHos
                CommandGenerator, SettingsService, PresetService, DialogService, ClipboardService,
                TitleBarColorizer   (+ an I* interface for most)
 ViewModels/    MainViewModel (both tabs), TreeNodeViewModel, SettingsViewModel, SubmodulesViewModel
-Views/         SettingsWindow, RemovalReviewWindow, SubmodulesWindow, SubmoduleUrlWindow, SubmoduleBranchWindow
+Views/         SettingsWindow, RemovalReviewWindow, SubmodulesWindow, SubmoduleUrlWindow, SubmoduleBranchWindow, WindowSizing (helper)
 Themes/        LightTheme.xaml, DarkTheme.xaml (brushes + implicit control styles),
                ButtonStyles.xaml (shared keyed/implicit styles: buttons, expander, scrollbar)
 _bin/          prebuilt binaries, intentionally committed for now
@@ -113,6 +113,7 @@ Only **folders** can be selected. `GetCheckedPaths` never yields files, and a de
 - The themes contain an **implicit `TextBlock` style** that sets the foreground. Text inside coloured buttons gets its colour from `ColoredActionButtonBase` (a local TextBlock style using `OnAccentBrush`). Use plain `Content="…"` on buttons.
 - `ButtonStyles.xaml` styles are `BasedOn` the theme's implicit Button style, resolved once at startup. Keep the Button style **identical** in both themes, or move it into `ButtonStyles.xaml`.
 - New windows: modal, owner = main window, themed via DynamicResource, `ItemsControl` + row templates rather than `DataGrid`.
+- Larger windows (main, Submodules) size themselves through `Views/WindowSizing.FitToWorkArea(window, preferredW, preferredH)` in the constructor after `InitializeComponent()`: capped to the primary work area minus 40 DIPs, never below MinWidth/MinHeight. Keep the XAML Width/Height as design-time values.
 - Primary action = `AccentActionButton`, right-aligned in action bars. Secondary actions = `ActionButton`.
 - Settings that should survive restarts go into `AppSettings` (saved through `SettingsService`, written atomically: temp file, then `File.Move(..., overwrite: true)`).
 

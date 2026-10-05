@@ -15,6 +15,7 @@ namespace GitCheckoutManager
         public MainWindow()
         {
             InitializeComponent();
+            Views.WindowSizing.FitToWorkArea(this, 1400, 820);
             SourceInitialized += OnSourceInitialized;
             PreviewKeyDown += OnWindowPreviewKeyDown;
 

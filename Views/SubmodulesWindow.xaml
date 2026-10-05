@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:GitCheckoutManager.Views"
         xmlns:models="clr-namespace:GitCheckoutManager.Models"
         Title="Submodules"
-        Width="900" Height="560"
+        Width="1400" Height="820"
         MinWidth="640" MinHeight="320"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
