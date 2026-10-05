@@ -87,11 +87,40 @@
                             Tag="{Binding}" Click="ActionsButton_Click">
                         <Button.ContextMenu>
                             <ContextMenu>
+                                <ContextMenu.Resources>
+                                    <Style x:Key="ResetTip" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="ToolTip" Value="Tick submodules that are off their recorded commit first."/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                    <Style x:Key="RemoteTip" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="ToolTip" Value="Tick one or more submodules that share the same remote first."/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                    <Style x:Key="ClearTip" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="ToolTip" Value="Nothing is ticked."/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ContextMenu.Resources>
                                 <MenuItem Header="Reset selected to recorded commit"
+                                          Style="{StaticResource ResetTip}"
                                           Command="{Binding PlacementTarget.Tag.ResetSelectedCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                 <MenuItem Header="Select all with this remote"
+                                          Style="{StaticResource RemoteTip}"
                                           Command="{Binding PlacementTarget.Tag.SelectAllWithRemoteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                 <MenuItem Header="Clear selection"
+                                          Style="{StaticResource ClearTip}"
                                           Command="{Binding PlacementTarget.Tag.ClearSelectionCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                             </ContextMenu>
                         </Button.ContextMenu>
