@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
 using GitCheckoutManager.Models;
 
@@ -63,8 +63,14 @@ namespace GitCheckoutManager.ViewModels
 
             if (_suppressPropagation) return;
 
-            if (value.HasValue)
-                SetChildrenChecked(value.Value);
+            // The middle state is derived from the children only; a null set from outside means "select all".
+            if (value == null)
+            {
+                IsChecked = true;
+                return;
+            }
+
+            SetChildrenChecked(value.Value);
 
             _parent?.RefreshCheckedFromChildren();
 

@@ -28,7 +28,10 @@ namespace GitCheckoutManager.Models
         /// <summary>Main window: tree width as a fraction of tree + right panel (0.4–0.8).</summary>
         public double MainSplitRatio { get; set; } = DefaultMainSplitRatio;
 
-        /// <summary>Submodules window: update to the branch tip (--remote) instead of the pinned commit.</summary>
+        /// <summary>Submodules window: pinned commit or branch tip (--remote). Null in settings saved before this existed; then <see cref="SubmoduleLatestFromBranch"/> decides.</summary>
+        public SubmoduleTarget? SubmoduleTarget { get; set; }
+
+        /// <summary>Legacy form of <see cref="SubmoduleTarget"/>: still read for old settings files and kept in sync on save so an older build sees the same choice.</summary>
         public bool SubmoduleLatestFromBranch { get; set; } = false;
 
         /// <summary>Submodules window: also initialize nested submodules (--recursive).</summary>

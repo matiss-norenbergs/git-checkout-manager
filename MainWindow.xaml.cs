@@ -15,6 +15,7 @@ namespace GitCheckoutManager
         public MainWindow()
         {
             InitializeComponent();
+            Views.WindowSizing.FitToWorkArea(this, 1400, 820);
             SourceInitialized += OnSourceInitialized;
             PreviewKeyDown += OnWindowPreviewKeyDown;
 
@@ -35,6 +36,7 @@ namespace GitCheckoutManager
             DataContext = _viewModel;
             ApplySplitRatio(_viewModel.MainSplitRatio);
             Loaded += async (_, _) => await _viewModel.CheckForUpdatesOnStartupAsync();
+            Closed += (_, _) => _viewModel.StopUpdateTimer();
 
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;

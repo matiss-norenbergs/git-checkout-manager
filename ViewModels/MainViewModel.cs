@@ -280,6 +280,15 @@ namespace GitCheckoutManager.ViewModels
         {
             _updateService = updateService;
             _folderOpener = new FolderOpener(shellLauncher);
+            _updateChecker = new UpdateChecker(updateService,
+                message => StatusMessage = message,
+                version =>
+                {
+                    UpdateMessage = $"Version {version} is ready — Restart to update";
+                    IsUpdateBarVisible = true;
+                    _updateTimer.Stop();
+                });
+            _updateTimer.Tick += async (_, _) => await OnUpdateTimerTickAsync();
             _hostServiceFactory = hostServiceFactory;
             _gitService = gitService;
             _remoteTreeService = remoteTreeService;
@@ -870,57 +879,27 @@ namespace GitCheckoutManager.ViewModels
         // ── Auto-update ───────────────────────────────────────────────────────
         [ObservableProperty] private bool _isUpdateBarVisible;
         [ObservableProperty] private string _updateMessage = string.Empty;
-        private bool _updateCheckRunning;
+        private readonly UpdateChecker _updateChecker;
+        private readonly DispatcherTimer _updateTimer = new() { Interval = UpdateCheckInterval };
 
-        /// <summary>Silent startup check: errors surface in the status bar at most once, never block.</summary>
+        /// <summary>How often the running app looks for a new release.</summary>
+        public static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(6);
+
+        /// <summary>Silent startup check, then the periodic one. Errors surface in the status bar at most once per run.</summary>
         public async Task CheckForUpdatesOnStartupAsync()
         {
-            try
-            {
-                if (!_updateService.IsInstalled) return;
-                await RunUpdateCheckAsync();
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Update check failed: {ex.Message}";
-            }
+            if (!_updateService.IsInstalled) return;
+            await _updateChecker.RunSilentCheckAsync();
+            if (_updateChecker.ReadyVersion == null)
+                _updateTimer.Start();
         }
 
-        private async Task<string> CheckForUpdatesManualAsync()
-        {
-            if (!_updateService.IsInstalled)
-                return "Updates are only available in the installed version.";
+        /// <summary>Timer tick; public so tests can call it without waiting for the timer.</summary>
+        public Task OnUpdateTimerTickAsync() => _updateChecker.TickAsync();
 
-            try
-            {
-                var version = await RunUpdateCheckAsync();
-                return version == null ? "You're up to date." : $"Version {version} is ready. Restart to update.";
-            }
-            catch (Exception ex)
-            {
-                return $"Update check failed: {ex.Message}";
-            }
-        }
+        public void StopUpdateTimer() => _updateTimer.Stop();
 
-        private async Task<string?> RunUpdateCheckAsync()
-        {
-            if (_updateCheckRunning) return null;
-            _updateCheckRunning = true;
-            try
-            {
-                var version = await Task.Run(() => _updateService.CheckAndDownloadAsync());
-                if (version != null)
-                {
-                    UpdateMessage = $"Version {version} is ready — Restart to update";
-                    IsUpdateBarVisible = true;
-                }
-                return version;
-            }
-            finally
-            {
-                _updateCheckRunning = false;
-            }
-        }
+        private Task<string> CheckForUpdatesManualAsync() => _updateChecker.RunManualCheckAsync();
 
         // Restart is held back while an operation runs, so an update never interrupts one.
         [RelayCommand(CanExecute = nameof(CanRestartToUpdate))]

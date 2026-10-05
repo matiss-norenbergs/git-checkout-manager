@@ -5,7 +5,18 @@ using GitCheckoutManager.Models;
 namespace GitCheckoutManager.Services
 {
     /// <summary>Why the last action left a submodule alone on purpose (as opposed to failing).</summary>
-    public enum SubmoduleSkipReason { None, UncommittedChanges, Declined }
+    public enum SubmoduleSkipReason
+    {
+        None, UncommittedChanges, Declined,
+        /// <summary>Pull: HEAD is detached, so there is no branch to fast-forward.</summary>
+        NotOnBranch,
+        /// <summary>The branch does not exist on the submodule's own origin.</summary>
+        BranchNotOnRemote,
+        /// <summary>The local branch has commits that aren't on origin, so it was left as it is.</summary>
+        LocalCommits,
+        /// <summary>The submodule is gone, not populated any more, or has nothing left to do.</summary>
+        NotAvailable
+    }
 
     /// <summary>One submodule with the error its last action left, if any, and whether that was a deliberate skip.</summary>
     public sealed record SubmoduleReportItem(SubmoduleInfo Info, string? Error, SubmoduleSkipReason Skip = SubmoduleSkipReason.None)

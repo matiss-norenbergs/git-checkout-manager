@@ -13,6 +13,7 @@ namespace GitCheckoutManager.Views
         public SubmodulesWindow()
         {
             InitializeComponent();
+            WindowSizing.FitToWorkArea(this, 1400, 820);
             // Cancel comes first while git is running, so a half-finished update is never abandoned silently.
             Closing += (_, e) => e.Cancel = (DataContext as SubmodulesViewModel)?.IsRunning == true;
             Closed += (_, _) => (DataContext as SubmodulesViewModel)?.Cancel();
@@ -35,5 +36,18 @@ namespace GitCheckoutManager.Views
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
             throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Radio button helper: IsChecked is true when the bound enum equals the ConverterParameter. Unchecking
+    /// is ignored (Binding.DoNothing) so the other radio's check is the only thing that changes the value.
+    /// </summary>
+    public sealed class EnumToBoolConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value != null && parameter != null && value.Equals(parameter);
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value is true && parameter != null ? parameter : Binding.DoNothing;
     }
 }

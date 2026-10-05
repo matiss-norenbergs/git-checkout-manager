@@ -17,6 +17,7 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 - [Presets](#presets)
 - [Settings](#settings)
 - [The generated script](#the-generated-script)
+- [Releasing](#releasing)
 - [Where data is stored](#where-data-is-stored)
 - [Tips and troubleshooting](#tips-and-troubleshooting)
 
@@ -30,7 +31,7 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 
 ### Installing
 
-Download `GitCheckoutManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-checkout-manager/releases); the app updates itself.
+Download `GitCheckoutManager-win-Setup.exe` from [Releases](https://github.com/matiss-norenbergs/git-checkout-manager/releases); the app updates itself (it checks for a new version at startup and every 6 hours while running; you can also check in Settings).
 
 ---
 
@@ -134,16 +135,16 @@ Successful checkouts are added to the **recent checkouts** list in the Manage ta
 - The most recent checkout opens automatically when you switch to this tab.
 - Checkouts that no longer exist on disk are shown greyed out with **(missing)**. Selecting one offers to remove it from the list.
 
+The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
+
+The tree is read from the checkout itself, so it needs no network connection and matches exactly what's checked out, including local commits you haven't pushed. Your current folders are pre-ticked. If the checkout isn't sparse yet, every folder starts ticked, and applying turns sparse checkout on.
+
 ### Opening a checkout or folder on disk
 
 - **Open in Explorer** and **Open in VS Code** next to the checkout bar open the checkout root. **Open in VS Code** only appears when VS Code is found (`code` on your PATH, or an installation under `%LocalAppData%\Programs\Microsoft VS Code` or `%ProgramFiles%\Microsoft VS Code`; looked up once per app run).
 - **Right-click a folder** in the tree for the same two actions. They are greyed out (with a tooltip) when the folder isn't on disk, for example outside the sparse selection or not applied yet. The disk is checked each time the menu opens.
 - In the **Submodules window**, the **⋯** menu of a checked-out submodule has the same two actions.
 - Problems (folder missing, launch failed) show in the status bar, or in the Submodules window's result line.
-
-The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
-
-The tree is read from the checkout itself, so it needs no network connection and matches exactly what's checked out, including local commits you haven't pushed. Your current folders are pre-ticked. If the checkout isn't sparse yet, every folder starts ticked, and applying turns sparse checkout on.
 
 ### Changing folders
 
@@ -191,7 +192,7 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 | **On a different commit** (blue) | Checked out, but at another commit, typically after updating to the latest from its branch. |
 | **Not initialized** (grey) | Part of your checkout but not downloaded yet. |
 | **Missing from .gitmodules** (red) | The repository contains the submodule, but `.gitmodules` has no entry for it, so Git doesn't know where to download it from. Use **Clone manually…** (below), and ask the repository maintainer to fix `.gitmodules`. |
-| **Cloned manually** (blue) | No `.gitmodules` entry, but the folder holds a repository (for example from **Clone manually…**). Git doesn't manage it as a submodule, so it can't be ticked for *Initialize*. |
+| **Cloned manually** (blue) | No `.gitmodules` entry, but the folder holds a repository (for example from **Clone manually…**). Git doesn't manage it as a submodule, so *Initialize* skips it; it can still be pulled and switched. |
 | **Not in your checkout** | Outside your selected folders; shown only with *Show submodules outside my checkout*. |
 
 ### After cloning: the review bar
@@ -233,6 +234,21 @@ For submodules that are on disk (*Ready*, *On a different commit*, *Cloned manua
 - **Reset to recorded commit** (only when the submodule is not on the commit the main repository expects): detaches the submodule at that commit again, after the same uncommitted-changes check and a confirmation.
 
 Each row shows **on <branch>** or **detached** under its pinned/current commits. After a switch, a row on another commit says *"Moved from the recorded commit"*: the **main repository will show this submodule as changed**, and committing there would record the new commit for everyone. Use **Reset to recorded commit** to undo that. One submodule is handled at a time.
+
+### Working on several submodules at once
+
+Every populated row (*Ready*, *On a different commit*, *Cloned manually*) can be ticked, not only the ones with problems. The selection actions sit at the right end of the filter row: **N selected**, **Pull**, **Switch branch…** and a **⋯** menu. The counts in the buttons are the rows the action applies to.
+
+- **Pull (n) / Pull all (n)**: fast-forwards the branch each submodule is **on**. It never merges or rebases, and needs no confirmation. With rows ticked it pulls those; with nothing ticked it pulls every submodule shown (*Pull all*). This is different from *Latest from branch*, which detaches the submodule at the tip of the `.gitmodules` branch. Rows that are detached are skipped (*not on a branch*), and a branch that exists only on your machine is skipped (*branch not on its remote*). A branch with commits of its own that aren't on origin is **left as it is**.
+- **Switch branch… (n)**: switches the ticked submodules to one branch. Uncommitted changes are checked first; those submodules are skipped and don't block the others. The picker loads the branches **once per distinct remote** and, by default, lists only branches every submodule's remote has. Tick *Show branches missing from some submodules* to see the rest (marked *on 3/5*); submodules whose remote lacks the chosen branch are skipped. A branch is greyed out only when every submodule is already on it; submodules already on the chosen branch are simply fast-forwarded. If some submodules sit on a commit that belongs to no branch, you get **one** question listing them; answering *No* skips only those.
+- **⋯ menu**: *Reset selected to recorded commit* (one confirmation, then each submodule is checked for uncommitted changes), *Select all with this remote* (available when the ticked rows share one remote) and *Clear selection*.
+
+> **Note:** switching a submodule to a branch that drops one of its nested submodules leaves that folder behind as untracked files, so the parent then counts as having uncommitted changes and later Pull/Switch runs skip it until you remove the folder.
+
+Like *Initialize selected*, these run **one submodule at a time**, in list order. Each row is re-read right before it is handled (switching a parent can change or remove a nested submodule). Rows that failed or were skipped stay ticked so you can run again. The summary spells out the outcome, for example *"Pulled 3 of 5: 2 updated, 1 already up to date. 1 skipped (uncommitted changes): external/a. 1 left as is (local commits): external/b."* or *"Switched 3 of 4 to develop. 1 skipped (branch not on its remote): external/c."*
+
+With *Latest from branch* selected, ticked *Ready* rows are updated by **Initialize selected** as well; with *Pinned commit* they have nothing to initialize.
+
 
 ### Copy report
 
@@ -340,6 +356,17 @@ dotnet test
 ```
 
 They also run in GitHub Actions on every pull request and push to `main`.
+
+---
+
+## Releasing
+
+Releases are built by the `Release` workflow, which packs the app with Velopack and uploads it to a GitHub Release. Versions are `MAJOR.MINOR.PATCH` (for example `2.4.2`). Either way:
+
+- **Push a tag:** `git tag v2.4.2 && git push origin v2.4.2`. The workflow builds the tagged commit.
+- **Run it manually:** open **Actions → Release → Run workflow** and enter the version without the `v` (for example `2.4.2`). The workflow builds `main` and creates the `v2.4.2` tag together with the release.
+
+The workflow fails early if the version isn't `MAJOR.MINOR.PATCH`, or (for manual runs) if the tag already exists.
 
 ---
 

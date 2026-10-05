@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, MAJOR.MINOR.PATCH without "v" (e.g. 2.4.2)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,15 +18,37 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Manual runs build main; tag pushes build the tagged commit.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || '' }}
 
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
-      - name: Get version from tag
+      - name: Determine version
         id: version
         shell: pwsh
-        run: echo "value=$('${{ github.ref_name }}'.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $version = $env:INPUT_VERSION
+          } else {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Version '$version' is not MAJOR.MINOR.PATCH."
+            exit 1
+          }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $existing = git ls-remote --tags origin "refs/tags/v$version"
+            if ($existing) {
+              Write-Error "Tag v$version already exists."
+              exit 1
+            }
+          }
+          echo "value=$version" >> $env:GITHUB_OUTPUT
 
       - name: Publish
         run: dotnet publish GitCheckoutManager.csproj -c Release -r win-x64 --self-contained false -p:Version=${{ steps.version.outputs.value }} -o publish
