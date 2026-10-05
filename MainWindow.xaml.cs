@@ -163,6 +163,15 @@ namespace GitCheckoutManager
             menu.IsOpen = true;
         }
 
+        private void OpenMenuButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button { ContextMenu: { } menu } button) return;
+
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
         private const double MinSplitRatio = 0.4;
         private const double MaxSplitRatio = 0.8;
 

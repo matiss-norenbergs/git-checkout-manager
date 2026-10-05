@@ -141,7 +141,7 @@ The tree is read from the checkout itself, so it needs no network connection and
 
 ### Opening a checkout or folder on disk
 
-- **Open in Explorer** and **Open in VS Code** next to the checkout bar open the checkout root. **Open in VS Code** only appears when VS Code is found (`code` on your PATH, or an installation under `%LocalAppData%\Programs\Microsoft VS Code` or `%ProgramFiles%\Microsoft VS Code`; looked up once per app run).
+- The **Open ▾** button in the checkout bar (enabled once a checkout is open) offers **Open in Explorer** and **Open in VS Code** for the checkout root. **Open in VS Code** only appears when VS Code is found (`code` on your PATH, or an installation under `%LocalAppData%\Programs\Microsoft VS Code` or `%ProgramFiles%\Microsoft VS Code`; looked up once per app run).
 - **Right-click a folder** in the tree for the same two actions. They are greyed out (with a tooltip) when the folder isn't on disk, for example outside the sparse selection or not applied yet. The disk is checked each time the menu opens.
 - In the **Submodules window**, the **⋯** menu of a checked-out submodule has the same two actions.
 - Problems (folder missing, launch failed) show in the status bar, or in the Submodules window's result line.
