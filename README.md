@@ -17,6 +17,7 @@ It works with **GitLab** (including self-hosted servers) and **GitHub**, and han
 - [Presets](#presets)
 - [Settings](#settings)
 - [The generated script](#the-generated-script)
+- [Releasing](#releasing)
 - [Where data is stored](#where-data-is-stored)
 - [Tips and troubleshooting](#tips-and-troubleshooting)
 
@@ -333,6 +334,17 @@ dotnet test
 ```
 
 They also run in GitHub Actions on every pull request and push to `main`.
+
+---
+
+## Releasing
+
+Releases are built by the `Release` workflow, which packs the app with Velopack and uploads it to a GitHub Release. Versions are `MAJOR.MINOR.PATCH` (for example `2.4.2`). Either way:
+
+- **Push a tag:** `git tag v2.4.2 && git push origin v2.4.2`. The workflow builds the tagged commit.
+- **Run it manually:** open **Actions → Release → Run workflow** and enter the version without the `v` (for example `2.4.2`). The workflow builds `main` and creates the `v2.4.2` tag together with the release.
+
+The workflow fails early if the version isn't `MAJOR.MINOR.PATCH`, or (for manual runs) if the tag already exists.
 
 ---
 
