@@ -111,6 +111,7 @@ public class SubmoduleBranchSwitchTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("Local branch feature has commits that aren't on origin — left as is.", result.StdOut);
+        Assert.Equal(SwitchOutcome.LeftAsIs, result.Outcome);
 
         var after = await Row(svc, main, "external/lib");
         Assert.Equal("feature", after.CurrentBranch);
@@ -251,6 +252,7 @@ public class SubmoduleBranchSwitchTests
         private readonly SubmoduleService _inner = NewService();
         public int SwitchCalls { get; private set; }
         public int ResetCalls { get; private set; }
+        public int ListCalls { get; private set; }
         public List<string> InitPaths { get; } = new();
 
         public Task<List<SubmoduleInfo>> ListAsync(string root, CancellationToken ct = default) => _inner.ListAsync(root, ct);
@@ -270,10 +272,13 @@ public class SubmoduleBranchSwitchTests
         public Task<GitResult> CloneManuallyAsync(string root, SubmoduleInfo sub, string url,
             Func<string, GitAuth?> resolveAuth, CancellationToken ct = default) =>
             _inner.CloneManuallyAsync(root, sub, url, resolveAuth, ct);
-        public Task<List<string>> ListRemoteBranchesAsync(SubmoduleInfo sub, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default) =>
-            _inner.ListRemoteBranchesAsync(sub, resolveAuth, ct);
+        public Task<List<string>> ListRemoteBranchesAsync(SubmoduleInfo sub, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        {
+            ListCalls++;
+            return _inner.ListRemoteBranchesAsync(sub, resolveAuth, ct);
+        }
         public Task<SwitchCheck> CheckSwitchSafetyAsync(SubmoduleInfo sub, CancellationToken ct = default) => _inner.CheckSwitchSafetyAsync(sub, ct);
-        public Task<GitResult> SwitchBranchAsync(SubmoduleInfo sub, string branch, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
+        public Task<SwitchResult> SwitchBranchAsync(SubmoduleInfo sub, string branch, Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
         {
             SwitchCalls++;
             return _inner.SwitchBranchAsync(sub, branch, resolveAuth, ct);
@@ -294,7 +299,20 @@ public class SubmoduleBranchSwitchTests
         public List<bool> DestructiveFlags { get; } = new();
         public int PickerCalls { get; private set; }
 
-        public string? ShowSubmoduleBranch(SubmoduleBranchModel model) { PickerCalls++; return BranchToPick; }
+        public SubmoduleBranchModel? LastBranchModel { get; private set; }
+        public List<BranchOption>? LastOptions { get; private set; }
+
+        public string? ShowSubmoduleBranch(SubmoduleBranchModel model)
+        {
+            PickerCalls++;
+            LastBranchModel = model;
+            // Like the window: the loader runs while the picker is open.
+            if (model.IsMulti && model.LoadBranchOptionsAsync != null)
+                LastOptions = model.LoadBranchOptionsAsync(default).GetAwaiter().GetResult();
+            else
+                model.LoadBranchesAsync(default).GetAwaiter().GetResult();
+            return BranchToPick;
+        }
         public List<string?> MessageDetails { get; } = new();
         public void ShowMessage(string title, string message, string? details = null)
         {
@@ -774,5 +792,437 @@ public class SubmoduleBranchSwitchTests
         Assert.Single(dialogs.Confirmations);
         Assert.Empty(spy.InitPaths);
         Assert.Equal(SubmoduleTarget.LatestFromBranch, vm.Target);
+    }
+
+    // ── Bulk pull / switch / reset ────────────────────────────────────────
+
+    private static void CommitOnCurrentBranch(string repo, string file)
+    {
+        GitFixture.Write(Path.Combine(repo, file), file);
+        GitFixture.Git(repo, "add", ".");
+        GitFixture.Git(repo, "commit", "-m", file);
+    }
+
+    private static string Head(string folder) => GitFixture.Git(folder, "rev-parse", "HEAD").Trim();
+
+    private static string FolderOf(string main, string path) => Path.Combine(main, path.Replace('/', Path.DirectorySeparatorChar));
+
+    private static async Task Tick(SubmodulesViewModel vm, params string[] paths)
+    {
+        await Task.CompletedTask;
+        foreach (var r in vm.Rows) r.IsSelected = paths.Length == 0 || paths.Contains(r.DisplayPath);
+    }
+
+    [RequiresGitFact]
+    public async Task OriginUrl_is_read_for_populated_rows_and_null_otherwise()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (origin, "external/a"));
+        var clone = FreshClone(fx, main);
+        var svc = NewService();
+
+        var populated = Assert.Single(await svc.ListAsync(main));
+        Assert.Equal(new Uri(origin).AbsoluteUri, populated.OriginUrl);
+
+        var empty = Assert.Single(await svc.ListAsync(clone));
+        Assert.Equal(SubmoduleState.NotInitialized, empty.State);
+        Assert.Null(empty.OriginUrl);
+    }
+
+    [RequiresGitFact]
+    public async Task Switch_reports_BranchNotOnRemote_when_origin_has_no_such_branch()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib");
+        var svc = NewService();
+
+        var result = await svc.SwitchBranchAsync(await Row(svc, main, "external/lib"), "nope", NoAuth);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Equal(SwitchOutcome.BranchNotOnRemote, result.Outcome);
+    }
+
+    [RequiresGitFact]
+    public async Task Selection_model_lets_clean_ready_rows_be_ticked_but_only_problems_initialize()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a"));
+        var (vm, spy, _) = await OpenWindowModel(main);
+
+        var row = vm.Rows.Single();
+        Assert.Equal(SubmoduleState.Ready, row.State);
+        Assert.False(row.CanInitialize);
+        Assert.True(row.CanSwitch);
+        Assert.True(row.CanPull);
+        Assert.True(row.IsSelectable);
+
+        Assert.Equal("Pull all (1)", vm.PullButtonText);
+        Assert.Equal("Switch branch… (0)", vm.SwitchButtonText);
+        Assert.Equal("0 selected", vm.SelectedText);
+
+        row.IsSelected = true;
+        Assert.Equal("Pull (1)", vm.PullButtonText);
+        Assert.Equal("Switch branch… (1)", vm.SwitchButtonText);
+        Assert.Equal("1 selected", vm.SelectedText);
+
+        // Pinned target: a clean Ready row has nothing to initialize.
+        Assert.Equal("Initialize selected (0)", vm.InitializeButtonText);
+        Assert.False(vm.InitializeSelectedCommand.CanExecute(null));
+        vm.SelectAllWithProblemsCommand.Execute(null);
+        Assert.Empty(spy.InitPaths);
+
+        // Latest from branch: the ticked Ready row is updated too.
+        vm.Target = SubmoduleTarget.LatestFromBranch;
+        Assert.Equal("Initialize selected (1)", vm.InitializeButtonText);
+        Assert.True(vm.InitializeSelectedCommand.CanExecute(null));
+        await vm.InitializeSelectedCommand.ExecuteAsync(null);
+        Assert.Equal(new[] { "external/a" }, spy.InitPaths);
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_reports_updated_and_already_up_to_date_and_never_confirms()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (origin, "external/a"));
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+
+        await vm.PullSelectedCommand.ExecuteAsync(null);
+        Assert.Equal(1, spy.SwitchCalls);
+        Assert.Equal("Pulled 1 of 1: 0 updated, 1 already up to date.", vm.ResultText);
+
+        CommitOnCurrentBranch(origin, "c.txt");
+        var tip = Head(origin);
+
+        await vm.PullSelectedCommand.ExecuteAsync(null);
+        Assert.Equal("Pulled 1 of 1: 1 updated, 0 already up to date.", vm.ResultText);
+        var row = vm.Rows.Single();
+        Assert.Equal(tip, row.Info.CurrentSha);
+        Assert.Equal("on main", row.BranchLineText);
+        Assert.Empty(dialogs.Confirmations);
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_leaves_a_diverged_branch_as_is_and_says_so()
+    {
+        using var fx = new GitFixture();
+        var origin = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (origin, "external/a"));
+        var folder = FolderOf(main, "external/a");
+        CommitOnCurrentBranch(folder, "local.txt");
+        var local = Head(folder);
+        CommitOnCurrentBranch(origin, "remote.txt");
+
+        var (vm, _, _) = await OpenWindowModel(main);
+        await vm.PullSelectedCommand.ExecuteAsync(null);
+
+        var row = vm.Rows.Single();
+        Assert.Equal(SubmoduleSkipReason.LocalCommits, row.Skip);
+        Assert.Equal("Skipped", row.DisplayStateText);
+        Assert.Equal("Pulled 0 of 1. 1 left as is (local commits): external/a.", vm.ResultText);
+        Assert.Equal(local, Head(folder));
+        Assert.True(File.Exists(Path.Combine(folder, "local.txt")));
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_skips_a_dirty_row_without_calling_switch_and_a_detached_row_as_not_on_a_branch()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "feature"), "external/b"),
+            (MakeOrigin(fx, "libc", "feature"), "external/c"));
+        GitFixture.Write(Path.Combine(FolderOf(main, "external/a"), "a.txt"), "changed");
+        GitFixture.Git(FolderOf(main, "external/b"), "checkout", "--detach");
+
+        var (vm, spy, _) = await OpenWindowModel(main);
+        Assert.False(vm.Rows.Single(r => r.DisplayPath == "external/b").CanPull);
+        await Tick(vm);
+
+        await vm.PullSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, spy.SwitchCalls);
+        Assert.Equal(SubmoduleSkipReason.UncommittedChanges, vm.Rows.Single(r => r.DisplayPath == "external/a").Skip);
+        Assert.Equal(SubmoduleSkipReason.NotOnBranch, vm.Rows.Single(r => r.DisplayPath == "external/b").Skip);
+        Assert.False(vm.Rows.Single(r => r.DisplayPath == "external/c").HasError);
+        Assert.Equal(
+            "Pulled 1 of 3: 0 updated, 1 already up to date. " +
+            "1 skipped (uncommitted changes): external/a. 1 skipped (not on a branch): external/b.",
+            vm.ResultText);
+        // Pull keeps every tick, skipped or not.
+        Assert.All(vm.Rows, r => Assert.True(r.IsSelected));
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_skips_a_local_only_branch_as_not_on_its_remote()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a"));
+        GitFixture.Git(FolderOf(main, "external/a"), "checkout", "-b", "local-only");
+
+        var (vm, _, _) = await OpenWindowModel(main);
+        await vm.PullSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(SubmoduleSkipReason.BranchNotOnRemote, vm.Rows.Single().Skip);
+        Assert.Contains("1 skipped (branch not on its remote): external/a.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_offers_branches_per_remote_and_skips_rows_whose_remote_lacks_it()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "other"), "external/b"));
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, dialogs.LastBranchModel!.RowCount);
+        Assert.Equal(new[]
+        {
+            new BranchOption("feature", 1, 0),
+            new BranchOption("main", 2, 2),
+            new BranchOption("other", 1, 0),
+        }, dialogs.LastOptions);
+
+        Assert.Equal(1, spy.SwitchCalls);
+        Assert.Equal("feature", vm.Rows.Single(r => r.DisplayPath == "external/a").Info.CurrentBranch);
+        var b = vm.Rows.Single(r => r.DisplayPath == "external/b");
+        Assert.Equal("main", b.Info.CurrentBranch);
+        Assert.Equal(SubmoduleSkipReason.BranchNotOnRemote, b.Skip);
+        Assert.Equal("Switched 1 of 2 to feature. 1 skipped (branch not on its remote): external/b.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_lists_branches_once_per_distinct_remote()
+    {
+        using var fx = new GitFixture();
+        var shared = MakeOrigin(fx, "shared", "feature");
+        var main = AddSubmodules(fx,
+            (shared, "external/a"), (shared, "external/b"),
+            (MakeOrigin(fx, "libc", "feature"), "external/c"));
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, spy.ListCalls);
+        Assert.Equal(3, spy.SwitchCalls);
+        Assert.Equal("Switched 3 of 3 to feature.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_fast_forwards_rows_already_on_the_branch()
+    {
+        using var fx = new GitFixture();
+        var originA = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (originA, "external/a"), (MakeOrigin(fx, "libb", "feature"), "external/b"));
+        var svc = NewService();
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "feature", NoAuth)).ExitCode);
+
+        GitFixture.Git(originA, "checkout", "feature");
+        CommitOnCurrentBranch(originA, "more.txt");
+        var tip = Head(originA);
+        GitFixture.Git(originA, "checkout", "main");
+
+        var (vm, _, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        Assert.Contains(new BranchOption("feature", 2, 1), dialogs.LastOptions!);
+        Assert.Equal(tip, vm.Rows.Single(r => r.DisplayPath == "external/a").Info.CurrentSha);
+        Assert.Equal("feature", vm.Rows.Single(r => r.DisplayPath == "external/b").Info.CurrentBranch);
+        Assert.Equal("Switched 2 of 2 to feature.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_skips_dirty_rows_in_preflight_and_does_not_count_them_in_the_picker()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "feature"), "external/b"),
+            (MakeOrigin(fx, "libc", "feature"), "external/c"));
+        GitFixture.Write(Path.Combine(FolderOf(main, "external/a"), "a.txt"), "changed");
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, dialogs.LastBranchModel!.RowCount);
+        Assert.Equal(2, spy.SwitchCalls);
+        Assert.Equal("main", vm.Rows.Single(r => r.DisplayPath == "external/a").Info.CurrentBranch);
+        Assert.Equal(SubmoduleSkipReason.UncommittedChanges, vm.Rows.Single(r => r.DisplayPath == "external/a").Skip);
+        Assert.Equal("Switched 2 of 3 to feature. 1 skipped (uncommitted changes): external/a.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_asks_once_for_unreferenced_rows_and_No_skips_only_those()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "feature"), "external/b"),
+            (MakeOrigin(fx, "libc", "feature"), "external/c"));
+        var folderA = FolderOf(main, "external/a");
+        GitFixture.Git(folderA, "checkout", "--detach");
+        CommitOnCurrentBranch(folderA, "d.txt");
+        var orphan = Head(folderA);
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+        dialogs.Confirm = false;
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        Assert.Single(dialogs.Confirmations);
+        Assert.True(Assert.Single(dialogs.DestructiveFlags));
+        Assert.Equal(2, spy.SwitchCalls);
+        Assert.Equal(SubmoduleSkipReason.Declined, vm.Rows.Single(r => r.DisplayPath == "external/a").Skip);
+        Assert.Equal(orphan, Head(folderA));
+        Assert.Equal("Switched 2 of 3 to feature. 1 skipped (declined): external/a.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_re_reads_a_nested_child_after_its_parent_was_switched()
+    {
+        using var fx = new GitFixture();
+        var inner = fx.Sub("inner");
+        GitFixture.Git(inner, "init");
+        CommitOnCurrentBranch(inner, "i.txt");
+        GitFixture.Git(inner, "branch", "nosub");
+
+        // lib: on main it has vendor/x; its branch "nosub" drops that submodule.
+        var lib = fx.Sub("lib");
+        GitFixture.Git(lib, "init");
+        CommitOnCurrentBranch(lib, "l.txt");
+        GitFixture.Git(lib, "submodule", "add", new Uri(inner).AbsoluteUri, "vendor/x");
+        GitFixture.Git(lib, "commit", "-m", "add inner");
+        GitFixture.Git(lib, "checkout", "-b", "nosub");
+        GitFixture.Git(lib, "rm", "vendor/x");
+        GitFixture.Git(lib, "commit", "-m", "drop inner");
+        GitFixture.Git(lib, "checkout", "main");
+
+        var main = AddSubmodules(fx, (lib, "external/lib"));
+        var svc = NewService();
+        var nested = (await svc.ListAsync(main))[1];
+        Assert.Equal(0, (await svc.InitAndUpdateAsync(nested.RepoRoot, nested, false, false, NoAuth)).ExitCode);
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        Assert.Equal(2, vm.Rows.Count);
+        await Tick(vm);
+        dialogs.BranchToPick = "nosub";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        // Parent first (list order); the child is gone by the time its turn comes, so it is skipped, not switched.
+        Assert.Equal(1, spy.SwitchCalls);
+        Assert.Equal("nosub", (await svc.GetAsync(main, "external/lib"))!.CurrentBranch);
+        Assert.Contains("1 skipped (nothing to do): external/lib/vendor/x.", vm.ResultText);
+        Assert.StartsWith("Switched 1 of 2 to nosub.", vm.ResultText);
+    }
+
+    [RequiresGitFact]
+    public async Task Reset_selected_confirms_once_resets_clean_rows_and_skips_dirty_ones()
+    {
+        using var fx = new GitFixture();
+        var main = AddSubmodules(fx,
+            (MakeOrigin(fx, "liba", "feature"), "external/a"),
+            (MakeOrigin(fx, "libb", "feature"), "external/b"));
+        var svc = NewService();
+        foreach (var path in new[] { "external/a", "external/b" })
+            Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, path), "feature", NoAuth)).ExitCode);
+        GitFixture.Write(Path.Combine(FolderOf(main, "external/a"), "a.txt"), "changed");
+
+        var (vm, spy, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+
+        await vm.ResetSelectedCommand.ExecuteAsync(null);
+
+        Assert.Single(dialogs.Confirmations);
+        Assert.True(Assert.Single(dialogs.DestructiveFlags));
+        Assert.Equal(1, spy.ResetCalls);
+        Assert.Equal("Reset 1 of 2 to the recorded commit. 1 skipped (uncommitted changes): external/a.", vm.ResultText);
+        Assert.Equal("detached", vm.Rows.Single(r => r.DisplayPath == "external/b").BranchLineText);
+        Assert.Equal("on feature", vm.Rows.Single(r => r.DisplayPath == "external/a").BranchLineText);
+    }
+
+    [RequiresGitFact]
+    public async Task Select_all_with_this_remote_ticks_rows_sharing_the_ticked_remote()
+    {
+        using var fx = new GitFixture();
+        var shared = MakeOrigin(fx, "shared", "feature");
+        var main = AddSubmodules(fx,
+            (shared, "external/a"), (shared, "external/b"),
+            (MakeOrigin(fx, "libc", "feature"), "external/c"));
+        var (vm, _, _) = await OpenWindowModel(main);
+
+        Assert.False(vm.SelectAllWithRemoteCommand.CanExecute(null));
+        vm.Rows.Single(r => r.DisplayPath == "external/a").IsSelected = true;
+        Assert.True(vm.SelectAllWithRemoteCommand.CanExecute(null));
+
+        vm.SelectAllWithRemoteCommand.Execute(null);
+
+        Assert.Equal(new[] { "external/a", "external/b" }, vm.Rows.Where(r => r.IsSelected).Select(r => r.DisplayPath));
+
+        vm.ClearSelectionCommand.Execute(null);
+        Assert.Equal(0, vm.SelectedCount);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_counts_a_branch_with_local_commits_as_switched_with_a_note()
+    {
+        using var fx = new GitFixture();
+        var originA = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (originA, "external/a"), (MakeOrigin(fx, "libb", "feature"), "external/b"));
+        var svc = NewService();
+        var folderA = FolderOf(main, "external/a");
+
+        // a: local feature with its own commit, origin's feature moves on, a goes back to main.
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "feature", NoAuth)).ExitCode);
+        CommitOnCurrentBranch(folderA, "local.txt");
+        var local = Head(folderA);
+        GitFixture.Git(originA, "checkout", "feature");
+        CommitOnCurrentBranch(originA, "remote.txt");
+        GitFixture.Git(originA, "checkout", "main");
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "main", NoAuth)).ExitCode);
+
+        var (vm, _, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        var a = vm.Rows.Single(r => r.DisplayPath == "external/a");
+        Assert.Equal("feature", a.Info.CurrentBranch);
+        Assert.Equal(local, Head(folderA));
+        Assert.Equal(SubmoduleSkipReason.None, a.Skip);
+        Assert.False(a.HasError);
+        Assert.Equal("Switched 2 of 2 to feature (1 not fast-forwarded, local commits: external/a).", vm.ResultText);
+        Assert.All(vm.Rows, r => Assert.True(r.IsSelected));
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_with_only_a_not_initialized_row_ticked_is_disabled_and_pulls_nothing()
+    {
+        using var fx = new GitFixture();
+        var main = FreshClone(fx, AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a")));
+        var (vm, spy, _) = await OpenWindowModel(main);
+        Assert.Equal(SubmoduleState.NotInitialized, vm.Rows.Single().State);
+
+        vm.Rows.Single().IsSelected = true;
+
+        Assert.Equal("Pull (0)", vm.PullButtonText);
+        Assert.False(vm.PullSelectedCommand.CanExecute(null));
+        Assert.Equal(0, spy.SwitchCalls);
     }
 }

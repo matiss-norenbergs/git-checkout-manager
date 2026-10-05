@@ -21,8 +21,13 @@
             <TextBlock x:Name="HeaderText" FontWeight="SemiBold" TextWrapping="Wrap"/>
             <TextBlock x:Name="CurrentText" Margin="0,4,0,0" TextWrapping="Wrap"
                        Foreground="{DynamicResource MutedTextBrush}"/>
+            <TextBlock x:Name="HintText" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"
+                       Foreground="{DynamicResource MutedTextBrush}"/>
             <TextBox x:Name="FilterBox" Margin="0,12,0,0" Padding="4,3" IsEnabled="False"
                      ToolTip="Filter branches" TextChanged="FilterBox_TextChanged"/>
+            <CheckBox x:Name="ShowMissingCheck" Margin="0,8,0,0" Visibility="Collapsed"
+                      Content="Show branches missing from some submodules"
+                      Checked="ShowMissingCheck_Changed" Unchecked="ShowMissingCheck_Changed"/>
         </StackPanel>
 
         <ListBox x:Name="BranchList" Grid.Row="1" Margin="0,8,0,0"

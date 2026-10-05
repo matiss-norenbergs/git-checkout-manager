@@ -96,6 +96,9 @@ namespace GitCheckoutManager.ViewModels
 
         public bool CanSwitchBranch => IsPopulated;
 
+        /// <summary>Normalized origin URL of a populated row; rows with the same value share one remote.</summary>
+        public string? RemoteKey => SubmodulesViewModel.NormalizeRemote(Info.OriginUrl);
+
         public bool CanResetToRecorded =>
             IsPopulated && !string.Equals(Info.CurrentSha, Info.PinnedSha, StringComparison.OrdinalIgnoreCase);
 
@@ -113,7 +116,7 @@ namespace GitCheckoutManager.ViewModels
 
         /// <summary>Why the last action on this submodule failed. Empty until an action fills it.</summary>
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(HasError), nameof(CanSelect), nameof(IsSelectable),
+        [NotifyPropertyChangedFor(nameof(HasError), nameof(CanInitialize), nameof(CanSelect), nameof(IsSelectable),
             nameof(DisplayStateText), nameof(DisplayBrushKey), nameof(ShowUnderlyingState))]
         private string _error = string.Empty;
 
@@ -144,25 +147,35 @@ namespace GitCheckoutManager.ViewModels
         public bool ActionsEnabled => !IsLocked;
 
         /// <summary>
-        /// Something can be done to this row: it is missing or off its pinned commit, or its last action
+        /// Initialize can do something here: the row is missing or off its pinned commit, or its last action
         /// failed (a nested submodule can fail while this one already sits on its pinned commit).
         /// </summary>
-        public bool CanSelect => State switch
+        public bool CanInitialize => State switch
         {
             SubmoduleState.NotInitialized or SubmoduleState.DifferentCommit => true,
             SubmoduleState.Ready => HasError,
             _ => false
         };
 
+        /// <summary>Populated, so a branch can be checked out in it.</summary>
+        public bool CanSwitch => IsPopulated;
+
+        /// <summary>Populated and on a branch, so that branch can be fast-forwarded.</summary>
+        public bool CanPull => IsPopulated && Info.CurrentBranch != null;
+
+        /// <summary>Some bulk action applies to this row, so its checkbox can be ticked.</summary>
+        public bool CanSelect => CanInitialize || CanSwitch || CanPull;
+
         public bool IsSelectable => CanSelect && !IsLocked;
 
         public string? SelectToolTip => State switch
         {
-            SubmoduleState.Ready => "Already on the commit the main repo expects. Nothing to do.",
             SubmoduleState.MissingFromGitmodules =>
                 "No entry in .gitmodules, so there is no URL to clone from. Use the row menu to clone it manually, or ask the repo maintainer to add it.",
             SubmoduleState.OutsideCheckout => "Not in your sparse checkout, so it is not on disk.",
-            SubmoduleState.ManuallyCloned => "Cloned by hand, so git submodule commands don't manage it.",
+            SubmoduleState.ManuallyCloned =>
+                "Cloned by hand, so git submodule commands don't manage it: Initialize skips it, Pull and Switch branch work.",
+            _ when CanSwitch && !CanPull => "Not on a branch, so Pull skips it.",
             _ => null
         };
 
@@ -257,6 +270,11 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(CloneManuallyCommand))]
         [NotifyCanExecuteChangedFor(nameof(SwitchBranchCommand))]
         [NotifyCanExecuteChangedFor(nameof(ResetToRecordedCommand))]
+        [NotifyCanExecuteChangedFor(nameof(PullSelectedCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SwitchSelectedCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ResetSelectedCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SelectAllWithRemoteCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ClearSelectionCommand))]
         private bool _isRunning;
 
         /// <summary>No run is active; the options, Refresh and Close are available.</summary>
@@ -287,6 +305,7 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnTargetChanged(SubmoduleTarget value)
         {
+            RefreshSelectionState();
             _settings.SubmoduleTarget = value;
             _settings.SubmoduleLatestFromBranch = value == SubmoduleTarget.LatestFromBranch;
             _settingsService.SaveSettings(_settings);
@@ -365,8 +384,10 @@ namespace GitCheckoutManager.ViewModels
             {
                 if (string.IsNullOrEmpty(e.PropertyName) ||
                     e.PropertyName == nameof(SubmoduleRowViewModel.IsSelected) ||
-                    e.PropertyName == nameof(SubmoduleRowViewModel.CanSelect))
-                    InitializeSelectedCommand.NotifyCanExecuteChanged();
+                    e.PropertyName == nameof(SubmoduleRowViewModel.CanSelect) ||
+                    e.PropertyName == nameof(SubmoduleRowViewModel.CanInitialize) ||
+                    e.PropertyName == nameof(SubmoduleRowViewModel.CanPull))
+                    RefreshSelectionState();
 
                 if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SubmoduleRowViewModel.Error))
                     CopyReportCommand.NotifyCanExecuteChanged();
@@ -379,26 +400,292 @@ namespace GitCheckoutManager.ViewModels
         [RelayCommand(CanExecute = nameof(CanSelectAll))]
         private void SelectAllWithProblems()
         {
-            foreach (var row in Rows.Where(r => r.CanSelect))
+            foreach (var row in Rows.Where(r => r.CanInitialize))
                 row.IsSelected = true;
         }
 
         private bool CanSelectAll() => !IsRunning;
 
-        private List<SubmoduleRowViewModel> SelectedRows() =>
+        // -- Selection ---------------------------------------------------------
+
+        /// <summary>Visible rows that are ticked and can be acted on.</summary>
+        private List<SubmoduleRowViewModel> TickedRows() =>
             Rows.Where(r => r.IsSelected && r.CanSelect).ToList();
+
+        /// <summary>
+        /// Rows Initialize selected acts on: ticked rows it can do something for. With "Latest from branch" a
+        /// ticked clean Ready row is updated to the branch tip too.
+        /// </summary>
+        private List<SubmoduleRowViewModel> SelectedRows()
+        {
+            var latest = Target == SubmoduleTarget.LatestFromBranch;
+            return TickedRows()
+                .Where(r => r.CanInitialize || (latest && r.State == SubmoduleState.Ready))
+                .ToList();
+        }
+
+        /// <summary>Pull acts on the ticked populated rows, or on every visible one only when nothing is ticked.</summary>
+        private List<SubmoduleRowViewModel> PullRows()
+        {
+            var ticked = TickedRows();
+            return ticked.Count == 0
+                ? Rows.Where(r => r.CanPull).ToList()
+                : ticked.Where(r => r.CanSwitch).ToList();
+        }
+
+        private List<SubmoduleRowViewModel> SwitchRows() => TickedRows().Where(r => r.CanSwitch).ToList();
+
+        private List<SubmoduleRowViewModel> ResetRows() => TickedRows().Where(r => r.CanResetToRecorded).ToList();
+
+        /// <summary>"Pull all" only when nothing is ticked.</summary>
+        private bool PullIsAll => TickedRows().Count == 0;
+
+        public int SelectedCount => TickedRows().Count;
+        public bool HasSelection => SelectedCount > 0;
+        public string SelectedText => $"{SelectedCount} selected";
+
+        public string PullButtonText
+        {
+            get
+            {
+                var n = PullRows().Count(r => r.CanPull);
+                return PullIsAll ? $"Pull all ({n})" : $"Pull ({n})";
+            }
+        }
+
+        public string InitializeButtonText => $"Initialize selected ({SelectedRows().Count})";
+
+        public string SwitchButtonText => $"Switch branch… ({SwitchRows().Count})";
+
+        public string PullToolTip
+        {
+            get
+            {
+                var text = "Fast-forward the branch each submodule is on. Never merges or rebases. " +
+                           "Unlike “Latest from branch”, which detaches at the tip of the .gitmodules branch, " +
+                           "this keeps each submodule on its own branch.";
+                if (PullIsAll) return text + " Nothing ticked: pulls every submodule shown that is on a branch.";
+
+                var ticked = TickedRows();
+                if (!PullRows().Any(r => r.CanPull)) text += " None of the ticked rows can be pulled.";
+                var detached = ticked.Count(r => r.CanSwitch && !r.CanPull);
+                var ignored = ticked.Count(r => !r.CanSwitch);
+                if (detached > 0) text += $" {detached} ticked not on a branch will be skipped.";
+                if (ignored > 0) text += $" {ignored} ticked not on disk will be ignored.";
+                return text;
+            }
+        }
+
+        public string SwitchToolTip
+        {
+            get
+            {
+                var text = "Check out one remote branch in every ticked submodule, fast-forwarding it. " +
+                           "Submodules with uncommitted changes are skipped.";
+                var ignored = TickedRows().Count(r => !r.CanSwitch);
+                return ignored > 0 ? text + $" {ignored} ticked not on disk will be ignored." : text;
+            }
+        }
+
+        /// <summary>The remote shared by every ticked row that has one; null when they differ or none is ticked.</summary>
+        private string? TickedRemote()
+        {
+            var keys = TickedRows().Select(r => r.RemoteKey).Where(k => k != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return keys.Count == 1 ? keys[0] : null;
+        }
+
+        /// <summary>Trailing slash and ".git" don't make a different remote.</summary>
+        internal static string? NormalizeRemote(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            var t = url.Trim().TrimEnd('/');
+            if (t.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) t = t[..^4];
+            return t.TrimEnd('/');
+        }
+
+        private void RefreshSelectionState()
+        {
+            InitializeSelectedCommand.NotifyCanExecuteChanged();
+            PullSelectedCommand.NotifyCanExecuteChanged();
+            SwitchSelectedCommand.NotifyCanExecuteChanged();
+            ResetSelectedCommand.NotifyCanExecuteChanged();
+            SelectAllWithRemoteCommand.NotifyCanExecuteChanged();
+            ClearSelectionCommand.NotifyCanExecuteChanged();
+            foreach (var name in new[]
+            {
+                nameof(SelectedCount), nameof(HasSelection), nameof(SelectedText), nameof(PullButtonText),
+                nameof(SwitchButtonText), nameof(InitializeButtonText), nameof(PullToolTip), nameof(SwitchToolTip)
+            })
+                OnPropertyChanged(name);
+        }
+
+        [RelayCommand(CanExecute = nameof(CanSelectAll))]
+        private void ClearSelection()
+        {
+            foreach (var row in _all) row.IsSelected = false;
+        }
+
+        private bool CanSelectAllWithRemote() => !IsRunning && TickedRemote() != null;
+
+        [RelayCommand(CanExecute = nameof(CanSelectAllWithRemote))]
+        private void SelectAllWithRemote()
+        {
+            var remote = TickedRemote();
+            if (remote == null) return;
+            foreach (var row in Rows.Where(r => r.CanSelect && string.Equals(r.RemoteKey, remote, StringComparison.OrdinalIgnoreCase)))
+                row.IsSelected = true;
+        }
 
         private bool CanInitializeSelected() => !IsRunning && !IsBusy && SelectedRows().Count > 0;
 
+        private bool CanPullSelected() => !IsRunning && !IsBusy && PullRows().Any(r => r.CanPull);
+
+        private bool CanSwitchSelected() => !IsRunning && !IsBusy && SwitchRows().Count > 0;
+
+        private bool CanResetSelected() => !IsRunning && !IsBusy && ResetRows().Count > 0;
+
         partial void OnIsBusyChanged(bool value)
         {
-            InitializeSelectedCommand.NotifyCanExecuteChanged();
+            RefreshSelectionState();
             CopyReportCommand.NotifyCanExecuteChanged();
             SetUrlCommand.NotifyCanExecuteChanged();
             ResetUrlCommand.NotifyCanExecuteChanged();
             CloneManuallyCommand.NotifyCanExecuteChanged();
             SwitchBranchCommand.NotifyCanExecuteChanged();
             ResetToRecordedCommand.NotifyCanExecuteChanged();
+        }
+
+        // -- Batch runner ---------------------------------------------------------
+
+        private enum BatchStatus { Succeeded, Skipped, Failed }
+
+        /// <summary>What one row's action came to. Explicit, never parsed from git's text.</summary>
+        private sealed record BatchOutcome(BatchStatus Status, string Text = "",
+            SubmoduleSkipReason Skip = SubmoduleSkipReason.None, SubmoduleInfo? Fresh = null, string? Tag = null)
+        {
+            public static BatchOutcome Success(SubmoduleInfo? fresh = null, string? tag = null) =>
+                new(BatchStatus.Succeeded, Fresh: fresh, Tag: tag);
+            public static BatchOutcome Skipped(SubmoduleSkipReason reason, string text) =>
+                new(BatchStatus.Skipped, text, reason);
+            public static BatchOutcome Failed(string text) => new(BatchStatus.Failed, text);
+        }
+
+        private sealed record BatchRun(List<(SubmoduleRowViewModel Row, BatchOutcome Outcome)> Done,
+            int Total, bool Cancelled)
+        {
+            public List<(SubmoduleRowViewModel Row, BatchOutcome Outcome)> Succeeded =>
+                Done.Where(d => d.Outcome.Status == BatchStatus.Succeeded).ToList();
+        }
+
+        /// <summary>
+        /// Runs <paramref name="action"/> on each target strictly one after another, in list order. Locks the
+        /// rows, shows Queued/Working, records skips and failures on their rows (a failure never stops the
+        /// others), reloads, and re-ticks the ticked rows (all of them, or with <c>clearSucceeded</c> only those that did not succeed) so the user can simply run again.
+        /// <paramref name="buildResultText"/> turns the outcome into the line shown above the list.
+        /// </summary>
+        private async Task RunBatchAsync(List<SubmoduleRowViewModel> targets,
+            Func<SubmoduleRowViewModel, CancellationToken, Task<BatchOutcome>> action,
+            Func<BatchRun, string> buildResultText, bool clearSucceeded)
+        {
+            if (targets.Count == 0) return;
+
+            IsRunning = true;
+            HasInitialized = true;
+            ResultText = string.Empty;
+            foreach (var row in _all) row.IsLocked = true;
+
+            _runCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            var ct = _runCts.Token;
+
+            foreach (var queued in targets) queued.IsQueued = true;
+
+            // Ticked rows that are not targets (e.g. not populated during a Pull) keep their tick too.
+            var ticked = Rows.Where(r => r.IsSelected).Select(r => r.DisplayPath).ToList();
+
+            var done = new List<(SubmoduleRowViewModel, BatchOutcome)>();
+            var cancelled = false;
+
+            try
+            {
+                foreach (var row in targets)
+                {
+                    row.IsQueued = false;
+                    row.IsWorking = true;
+                    BatchOutcome outcome;
+                    try
+                    {
+                        outcome = await action(row, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancelled = true;
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        outcome = BatchOutcome.Failed(TailOf(new GitResult(-1, string.Empty, ex.Message)));
+                    }
+                    finally
+                    {
+                        row.IsWorking = false;
+                    }
+
+                    done.Add((row, outcome));
+
+                    if (outcome.Status == BatchStatus.Succeeded)
+                    {
+                        ClearRowError(row, row.DisplayPath);
+
+                        // Show the real state now instead of waiting for the end-of-run reload.
+                        try
+                        {
+                            var fresh = outcome.Fresh ?? await _submoduleService.GetAsync(
+                                row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
+                            if (fresh != null) row.UpdateInfo(fresh);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            cancelled = true;
+                            break;
+                        }
+                        catch
+                        {
+                            // The reload after the run will show it.
+                        }
+                    }
+                    else if (outcome.Status == BatchStatus.Skipped)
+                    {
+                        SetRowError(row, row.DisplayPath, outcome.Text, outcome.Skip);
+                    }
+                    else
+                    {
+                        SetRowError(row, row.DisplayPath, outcome.Text);
+                    }
+                }
+
+                var run = new BatchRun(done, targets.Count, cancelled);
+                // Initialize unticks what succeeded; the other actions keep every tick (Pull all ticked nothing).
+                var stillSelected = (clearSucceeded
+                        ? ticked.Except(run.Succeeded.Select(d => d.Row.DisplayPath))
+                        : ticked)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                await LoadAsync();
+
+                foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
+                    row.IsSelected = true;
+
+                ResultText = buildResultText(run);
+            }
+            finally
+            {
+                // Rows that never started go back to their previous state.
+                foreach (var queued in targets) queued.IsQueued = false;
+                _runCts.Dispose();
+                _runCts = null;
+                foreach (var row in _all) row.IsLocked = false;
+                IsRunning = false;
+            }
         }
 
         /// <summary>
@@ -416,110 +703,28 @@ namespace GitCheckoutManager.ViewModels
 
             if (latest && !ConfirmLatest()) return;
 
-            IsRunning = true;
-            HasInitialized = true;
-            ResultText = string.Empty;
-            foreach (var row in _all) row.IsLocked = true;
-
-            _runCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-            var ct = _runCts.Token;
-
-            foreach (var queued in targets) queued.IsQueued = true;
-
-            var succeeded = new List<string>();
-            var failed = new List<string>();
-            var skipped = new List<string>();
-            var cancelled = false;
-
-            try
-            {
-                foreach (var row in targets)
+            await RunBatchAsync(targets,
+                async (row, ct) =>
                 {
-                    row.IsQueued = false;
-                    row.IsWorking = true;
-                    GitResult result;
-                    try
+                    // A populated row is about to be moved, so it gets the same safety rules as Switch branch.
+                    var refusal = await CheckBeforeUpdateAsync(row, latest, ct);
+                    if (refusal != null)
                     {
-                        // A populated row is about to be moved, so it gets the same safety rules as Switch branch.
-                        var refusal = await CheckBeforeUpdateAsync(row, latest, ct);
-                        if (refusal != null)
-                        {
-                            if (refusal.ExitCode is DirtyExitCode or DeclinedExitCode)
-                            {
-                                SetRowError(row, row.DisplayPath, refusal.StdErr,
-                                    refusal.ExitCode == DirtyExitCode ? SubmoduleSkipReason.UncommittedChanges : SubmoduleSkipReason.Declined);
-                                skipped.Add(row.DisplayPath);
-                                continue;
-                            }
-                            result = refusal;
-                        }
-                        else
-                        {
-                            result = await _submoduleService.InitAndUpdateAsync(row.Info.RepoRoot, row.Info, latest, nested, _resolveAuth, ct);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        cancelled = true;
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        result = new GitResult(-1, string.Empty, ex.Message);
-                    }
-                    finally
-                    {
-                        row.IsWorking = false;
+                        if (refusal.ExitCode is DirtyExitCode or DeclinedExitCode)
+                            return BatchOutcome.Skipped(
+                                refusal.ExitCode == DirtyExitCode ? SubmoduleSkipReason.UncommittedChanges : SubmoduleSkipReason.Declined,
+                                refusal.StdErr);
+                        return BatchOutcome.Failed(TailOf(refusal));
                     }
 
-                    if (result.ExitCode == 0)
-                    {
-                        ClearRowError(row, row.DisplayPath);
-                        succeeded.Add(row.DisplayPath);
-
-                        // Show the real state now instead of waiting for the end-of-run reload.
-                        try
-                        {
-                            var fresh = await _submoduleService.GetAsync(
-                                row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
-                            if (fresh != null) row.UpdateInfo(fresh);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            cancelled = true;
-                            break;
-                        }
-                        catch
-                        {
-                            // The reload after the run will show it.
-                        }
-                    }
-                    else
-                    {
-                        SetRowError(row, row.DisplayPath, TailOf(result));
-                        failed.Add(row.DisplayPath);
-                    }
-                }
-
-                // Rows that did not succeed keep their tick, so the user can simply run again.
-                var stillSelected = targets.Select(r => r.DisplayPath).Except(succeeded).ToHashSet(StringComparer.Ordinal);
-
-                await LoadAsync();
-
-                foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
-                    row.IsSelected = true;
-
-                ResultText = BuildResultText(succeeded.Count, targets.Count, failed, skipped, cancelled);
-            }
-            finally
-            {
-                // Rows that never started go back to their previous state.
-                foreach (var queued in targets) queued.IsQueued = false;
-                _runCts.Dispose();
-                _runCts = null;
-                foreach (var row in _all) row.IsLocked = false;
-                IsRunning = false;
-            }
+                    var result = await _submoduleService.InitAndUpdateAsync(row.Info.RepoRoot, row.Info, latest, nested, _resolveAuth, ct);
+                    return result.ExitCode == 0 ? BatchOutcome.Success() : BatchOutcome.Failed(TailOf(result));
+                },
+                run => BuildResultText(run.Succeeded.Count, run.Total,
+                    run.Done.Where(d => d.Outcome.Status == BatchStatus.Failed).Select(d => d.Row.DisplayPath).ToList(),
+                    run.Done.Where(d => d.Outcome.Status == BatchStatus.Skipped).Select(d => d.Row.DisplayPath).ToList(),
+                    run.Cancelled),
+                clearSucceeded: true);
         }
 
         /// <summary>Marks a refusal in <see cref="GitResult.ExitCode"/>; its StdErr is the row's error text.</summary>
@@ -551,10 +756,7 @@ namespace GitCheckoutManager.ViewModels
 
             if (check.IsDirty)
             {
-                var files = check.DirtyFiles.Take(MaxListedFiles);
-                var text = $"Uncommitted changes in {row.DisplayPath} — commit or discard them first." +
-                           Environment.NewLine + string.Join(Environment.NewLine, files);
-                return new GitResult(DirtyExitCode, string.Empty, text);
+                return new GitResult(DirtyExitCode, string.Empty, DirtyText(row.DisplayPath, check));
             }
 
             if (check.UnreferencedCommits && !_dialogService.ShowConfirmation(
@@ -566,6 +768,10 @@ namespace GitCheckoutManager.ViewModels
 
             return null;
         }
+
+        private static string DirtyText(string displayPath, SwitchCheck check) =>
+            $"Uncommitted changes in {displayPath} — commit or discard them first." +
+            Environment.NewLine + string.Join(Environment.NewLine, check.DirtyFiles.Take(MaxListedFiles));
 
         // -- Row actions: fix a broken submodule for this checkout only ----------
 
@@ -640,7 +846,7 @@ namespace GitCheckoutManager.ViewModels
                 return;
 
             await RunRowActionAsync(row, "Switched",
-                ct => _submoduleService.SwitchBranchAsync(row.Info, branch, _resolveAuth, ct),
+                async ct => (await _submoduleService.SwitchBranchAsync(row.Info, branch, _resolveAuth, ct)).ToGitResult(),
                 showNote: true);
         }
 
@@ -658,6 +864,296 @@ namespace GitCheckoutManager.ViewModels
                 return;
 
             await RunRowActionAsync(row, "Reset", ct => _submoduleService.ResetToRecordedAsync(row.Info, ct));
+        }
+
+        // -- Bulk actions -----------------------------------------------------------
+
+        private static bool IsPopulatedState(SubmoduleState state) =>
+            state is SubmoduleState.Ready or SubmoduleState.DifferentCommit or SubmoduleState.ManuallyCloned;
+
+        /// <summary>
+        /// Run right before acting on a row: a parent switched earlier in the same batch can change or remove a
+        /// nested child, so the row is read again, then checked for uncommitted changes. Returns the fresh state
+        /// and check, or the outcome that skips the row.
+        /// </summary>
+        private async Task<(SubmoduleInfo? Fresh, SwitchCheck? Check, BatchOutcome? Stop)> PrepareRowAsync(
+            SubmoduleRowViewModel row, CancellationToken ct)
+        {
+            var fresh = await _submoduleService.GetAsync(
+                row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
+            if (fresh == null || !IsPopulatedState(fresh.State))
+                return (null, null, BatchOutcome.Skipped(SubmoduleSkipReason.NotAvailable,
+                    $"{row.DisplayPath} is no longer a populated submodule."));
+
+            // The VM never calls a switch on a dirty folder.
+            var check = await _submoduleService.CheckSwitchSafetyAsync(fresh, ct);
+            if (check.IsDirty)
+                return (fresh, check, BatchOutcome.Skipped(SubmoduleSkipReason.UncommittedChanges, DirtyText(row.DisplayPath, check)));
+
+            return (fresh, check, null);
+        }
+
+        /// <summary>Maps a switch result to the row's outcome. <paramref name="after"/> is read only on success.</summary>
+        private async Task<BatchOutcome> SwitchOutcomeAsync(SubmoduleRowViewModel row, SwitchResult result, string branch,
+            string? shaBefore, bool pull, CancellationToken ct)
+        {
+            if (result.Outcome == SwitchOutcome.BranchNotOnRemote)
+                return BatchOutcome.Skipped(SubmoduleSkipReason.BranchNotOnRemote,
+                    $"The branch {branch} doesn't exist on this submodule's origin.");
+            if (result.ExitCode != 0) return BatchOutcome.Failed(TailOf(result.ToGitResult()));
+            // Pull: nothing moved. Switch: the checkout already happened, only the fast-forward was left out.
+            if (result.Outcome == SwitchOutcome.LeftAsIs && pull)
+                return BatchOutcome.Skipped(SubmoduleSkipReason.LocalCommits, result.StdOut);
+
+            var after = await _submoduleService.GetAsync(
+                row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
+            if (result.Outcome == SwitchOutcome.LeftAsIs) return BatchOutcome.Success(after, "notff");
+            var moved = !string.Equals(after?.CurrentSha, shaBefore, StringComparison.OrdinalIgnoreCase);
+            return BatchOutcome.Success(after, pull ? (moved ? "updated" : "uptodate") : null);
+        }
+
+        [RelayCommand(CanExecute = nameof(CanPullSelected))]
+        private async Task PullSelectedAsync()
+        {
+            var targets = PullRows();
+
+            await RunBatchAsync(targets,
+                async (row, ct) =>
+                {
+                    var (fresh, _, stop) = await PrepareRowAsync(row, ct);
+                    if (stop != null) return stop;
+
+                    // Re-read on purpose: the row may have been detached or moved since it was listed.
+                    var branch = fresh!.CurrentBranch;
+                    if (branch == null)
+                        return BatchOutcome.Skipped(SubmoduleSkipReason.NotOnBranch,
+                            $"{row.DisplayPath} is not on a branch, so there is nothing to pull.");
+
+                    var result = await _submoduleService.SwitchBranchAsync(fresh, branch, _resolveAuth, ct);
+                    return await SwitchOutcomeAsync(row, result, branch, fresh.CurrentSha, pull: true, ct);
+                },
+                run =>
+                {
+                    var ok = run.Succeeded;
+                    var updated = ok.Count(d => d.Outcome.Tag == "updated");
+                    var text = $"Pulled {ok.Count} of {run.Total}";
+                    text += ok.Count > 0 ? $": {updated} updated, {ok.Count - updated} already up to date." : ".";
+                    return JoinText(text, ProblemSummary(run));
+                },
+                clearSucceeded: false);
+        }
+
+        /// <summary>Remote branches of every row, one listing per distinct remote. Fills <paramref name="availability"/> by row path.</summary>
+        private async Task LoadAvailabilityAsync(List<SubmoduleRowViewModel> rows,
+            Dictionary<string, HashSet<string>> availability, CancellationToken ct)
+        {
+            // Rows without an origin URL are listed on their own.
+            foreach (var group in rows.GroupBy(r => r.RemoteKey ?? "\0" + r.DisplayPath, StringComparer.OrdinalIgnoreCase))
+            {
+                var rep = group.First();
+                HashSet<string> names;
+                try
+                {
+                    names = (await _submoduleService.ListRemoteBranchesAsync(rep.Info, _resolveAuth, ct))
+                        .ToHashSet(StringComparer.Ordinal);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && rows.Count > 1)
+                {
+                    throw new InvalidOperationException($"{rep.DisplayPath}: {ex.Message}", ex);
+                }
+                foreach (var row in group) availability[row.DisplayPath] = names;
+            }
+        }
+
+        [RelayCommand(CanExecute = nameof(CanSwitchSelected))]
+        private async Task SwitchSelectedAsync()
+        {
+            var ticked = SwitchRows();
+            if (ticked.Count == 0) return;
+
+            // Preflight: dirty rows are reported as skipped and never block the others.
+            var checks = await PreflightAsync(ticked);
+            if (checks == null) return;
+
+            bool IsDirty(SubmoduleRowViewModel r) => checks.TryGetValue(r, out var c) && c.IsDirty;
+            var clean = ticked.Where(r => !IsDirty(r)).ToList();
+
+            if (clean.Count == 0)
+            {
+                foreach (var row in ticked)
+                    SetRowError(row, row.DisplayPath, DirtyText(row.DisplayPath, checks[row]), SubmoduleSkipReason.UncommittedChanges);
+                ResultText = $"Nothing to switch: {ticked.Count} skipped (uncommitted changes): " +
+                             string.Join(", ", ticked.Select(r => r.DisplayPath)) + ".";
+                return;
+            }
+
+            var availability = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+            var model = clean.Count == 1
+                ? new SubmoduleBranchModel
+                {
+                    DisplayPath = clean[0].DisplayPath,
+                    CurrentBranch = clean[0].Info.CurrentBranch,
+                    LoadBranchesAsync = async ct =>
+                    {
+                        await LoadAvailabilityAsync(clean, availability, ct);
+                        return availability[clean[0].DisplayPath].OrderBy(b => b, StringComparer.OrdinalIgnoreCase).ToList();
+                    }
+                }
+                : new SubmoduleBranchModel
+                {
+                    DisplayPath = $"{clean.Count} submodules",
+                    RowCount = clean.Count,
+                    LoadBranchOptionsAsync = async ct =>
+                    {
+                        await LoadAvailabilityAsync(clean, availability, ct);
+                        return availability.Values
+                            .SelectMany(v => v).Distinct(StringComparer.Ordinal)
+                            .OrderBy(b => b, StringComparer.OrdinalIgnoreCase)
+                            .Select(b => new BranchOption(b,
+                                clean.Count(r => availability[r.DisplayPath].Contains(b)),
+                                clean.Count(r => r.Info.CurrentBranch == b)))
+                            .ToList();
+                    }
+                };
+
+            var branch = _dialogService.ShowSubmoduleBranch(model);
+            if (branch == null) return;
+
+            bool HasBranch(SubmoduleRowViewModel r) =>
+                !availability.TryGetValue(r.DisplayPath, out var set) || set.Contains(branch);
+
+            // One question for all rows whose current commit is on no branch; No skips only those.
+            var accepted = new HashSet<string>(StringComparer.Ordinal);
+            var unreferenced = clean.Where(r => HasBranch(r) && checks.TryGetValue(r, out var c) && c.UnreferencedCommits).ToList();
+            if (unreferenced.Count > 0)
+            {
+                var yes = _dialogService.ShowConfirmation(
+                    "Switch branch",
+                    $"The current commit in {unreferenced.Count} submodule{(unreferenced.Count == 1 ? "" : "s")} isn't on any branch. " +
+                    "After switching it will be hard to find. Continue for them? (No skips only those; the others still switch.)",
+                    string.Join(Environment.NewLine, unreferenced.Select(r => r.DisplayPath)),
+                    destructive: true);
+                if (yes) foreach (var r in unreferenced) accepted.Add(r.DisplayPath);
+            }
+
+            await RunBatchAsync(ticked,
+                async (row, ct) =>
+                {
+                    var (fresh, check, stop) = await PrepareRowAsync(row, ct);
+                    if (stop != null) return stop;
+
+                    if (!HasBranch(row))
+                        return BatchOutcome.Skipped(SubmoduleSkipReason.BranchNotOnRemote,
+                            $"The branch {branch} doesn't exist on this submodule's origin.");
+
+                    if (check!.UnreferencedCommits && !accepted.Contains(row.DisplayPath))
+                        return BatchOutcome.Skipped(SubmoduleSkipReason.Declined,
+                            $"Skipped: the current commit in {row.DisplayPath} isn't on any branch, and switching wasn't confirmed for it.");
+
+                    // A row already on the branch simply gets fast-forwarded: same code path.
+                    var result = await _submoduleService.SwitchBranchAsync(fresh!, branch, _resolveAuth, ct);
+                    return await SwitchOutcomeAsync(row, result, branch, fresh!.CurrentSha, pull: false, ct);
+                },
+                run =>
+                {
+                    var notFf = run.Succeeded.Where(d => d.Outcome.Tag == "notff").Select(d => d.Row.DisplayPath).ToList();
+                    var note = notFf.Count > 0
+                        ? $" ({notFf.Count} not fast-forwarded, local commits: {string.Join(", ", notFf)})"
+                        : string.Empty;
+                    return JoinText($"Switched {run.Succeeded.Count} of {run.Total} to {branch}{note}.", ProblemSummary(run));
+                },
+                clearSucceeded: false);
+        }
+
+        /// <summary>Safety check of every row up front. Null when cancelled. A row whose check fails is left out (its own run reports it).</summary>
+        private async Task<Dictionary<SubmoduleRowViewModel, SwitchCheck>?> PreflightAsync(List<SubmoduleRowViewModel> rows)
+        {
+            IsBusy = true;
+            try
+            {
+                var map = new Dictionary<SubmoduleRowViewModel, SwitchCheck>();
+                foreach (var row in rows)
+                {
+                    try
+                    {
+                        map[row] = await _submoduleService.CheckSwitchSafetyAsync(row.Info, _cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return null;
+                    }
+                    catch (Exception)
+                    {
+                        // Reported on the row when its turn comes.
+                    }
+                }
+                return map;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        [RelayCommand(CanExecute = nameof(CanResetSelected))]
+        private async Task ResetSelectedAsync()
+        {
+            var targets = ResetRows();
+            if (targets.Count == 0) return;
+
+            if (!_dialogService.ShowConfirmation(
+                    "Reset to recorded commit",
+                    $"Move {targets.Count} submodule{(targets.Count == 1 ? "" : "s")} back to the commit the main repo expects? " +
+                    "Submodules with uncommitted changes are skipped.",
+                    string.Join(Environment.NewLine, targets.Select(r => r.DisplayPath)),
+                    destructive: true))
+                return;
+
+            await RunBatchAsync(targets,
+                async (row, ct) =>
+                {
+                    var (fresh, _, stop) = await PrepareRowAsync(row, ct);
+                    if (stop != null) return stop;
+
+                    if (string.Equals(fresh!.CurrentSha, fresh.PinnedSha, StringComparison.OrdinalIgnoreCase))
+                        return BatchOutcome.Skipped(SubmoduleSkipReason.NotAvailable,
+                            $"{row.DisplayPath} is already on the recorded commit.");
+
+                    var result = await _submoduleService.ResetToRecordedAsync(fresh, ct);
+                    return result.ExitCode == 0 ? BatchOutcome.Success() : BatchOutcome.Failed(TailOf(result));
+                },
+                run => JoinText($"Reset {run.Succeeded.Count} of {run.Total} to the recorded commit.", ProblemSummary(run)),
+                clearSucceeded: false);
+        }
+
+        private static string JoinText(string head, string tail) => tail.Length == 0 ? head : $"{head} {tail}";
+
+        private static string SkipLabel(SubmoduleSkipReason reason) => reason switch
+        {
+            SubmoduleSkipReason.UncommittedChanges => "skipped (uncommitted changes)",
+            SubmoduleSkipReason.NotOnBranch => "skipped (not on a branch)",
+            SubmoduleSkipReason.BranchNotOnRemote => "skipped (branch not on its remote)",
+            SubmoduleSkipReason.Declined => "skipped (declined)",
+            SubmoduleSkipReason.NotAvailable => "skipped (nothing to do)",
+            SubmoduleSkipReason.LocalCommits => "left as is (local commits)",
+            _ => "skipped"
+        };
+
+        /// <summary>"1 failed: a. 1 skipped (uncommitted changes): b. 1 left as is (local commits): c. Cancelled."</summary>
+        private static string ProblemSummary(BatchRun run)
+        {
+            var parts = new List<string>();
+
+            var failed = run.Done.Where(d => d.Outcome.Status == BatchStatus.Failed).Select(d => d.Row.DisplayPath).ToList();
+            if (failed.Count > 0) parts.Add($"{failed.Count} failed: {string.Join(", ", failed)}.");
+
+            foreach (var group in run.Done.Where(d => d.Outcome.Status == BatchStatus.Skipped)
+                         .GroupBy(d => d.Outcome.Skip).OrderBy(g => g.Key))
+                parts.Add($"{group.Count()} {SkipLabel(group.Key)}: {string.Join(", ", group.Select(d => d.Row.DisplayPath))}.");
+
+            if (run.Cancelled) parts.Add("Cancelled.");
+            return string.Join(" ", parts);
         }
 
         /// <summary>
@@ -851,7 +1347,7 @@ namespace GitCheckoutManager.ViewModels
                 Rows.Add(row);
 
             SummaryText = BuildSummary();
-            InitializeSelectedCommand.NotifyCanExecuteChanged();
+            RefreshSelectionState();
             CopyReportCommand.NotifyCanExecuteChanged();
 
             EmptyText = Rows.Count > 0 ? string.Empty
