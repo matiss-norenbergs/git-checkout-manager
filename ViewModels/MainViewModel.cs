@@ -152,6 +152,8 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
         [NotifyCanExecuteChangedFor(nameof(DisableSparseCheckoutCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInExplorerCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInVsCodeCommand))]
         [NotifyPropertyChangedFor(nameof(HasOpenCheckout))]
         private CheckoutInfo? _checkoutInfo;
 
