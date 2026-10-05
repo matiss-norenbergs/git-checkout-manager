@@ -616,12 +616,11 @@
                                                       ItemContainerStyle="{StaticResource TreeItemStyle}">
                                 <StackPanel Orientation="Horizontal" Margin="0,2">
                                     <!-- Only folders are selectable: cone mode cannot take a file path -->
-                                    <CheckBox IsChecked="{Binding IsChecked}"
-                                              IsThreeState="True"
+                                    <controls:TreeCheckBox IsChecked="{Binding IsChecked}"
                                               VerticalAlignment="Center"
                                               Margin="0,0,5,0">
-                                        <CheckBox.Style>
-                                            <Style TargetType="CheckBox">
+                                        <controls:TreeCheckBox.Style>
+                                            <Style TargetType="controls:TreeCheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
                                                 <Setter Property="Visibility" Value="Visible"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsFolder}" Value="False">
@@ -633,8 +632,8 @@
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </CheckBox.Style>
-                                    </CheckBox>
+                                        </controls:TreeCheckBox.Style>
+                                    </controls:TreeCheckBox>
 
                                     <!-- Node name: bold for folders, muted for excluded files -->
                                     <TextBlock VerticalAlignment="Center">

@@ -99,6 +99,8 @@ _bin/          prebuilt binaries, intentionally committed for now
 ### Cone-mode rule
 Only **folders** can be selected. `GetCheckedPaths` never yields files, and a defensive filter (`DropFilePaths`) runs before every `sparse-checkout set`. Files show `IsIncluded` (root files always; a folder's direct files whenever it or a descendant is selected).
 
+The tree uses `Controls/TreeCheckBox` (not `IsThreeState`): the middle state is display-only (derived from the children by `RefreshCheckedFromChildren`) and a click on it selects the whole folder; a `null` set from outside propagation is normalised to ticked.
+
 ### Presets
 `%AppData%\GitCheckoutManager\presets.json`, keyed `remote:<normalized url>` (same key in both tabs). Paths that resolve to files or don't exist are skipped on load.
 
