@@ -74,6 +74,13 @@ _bin/          prebuilt binaries, intentionally committed for now
 - URL picker: `SubmoduleUrlWindow` via `IDialogService.ShowSubmoduleUrl`; it tests the URL with `TestUrlAsync` (`ls-remote --heads`) before returning it.
 - Init runs **one submodule at a time**: `submodule init -- <path>`, read the resolved URL, choose auth for **that** URL's host, then `submodule update [--remote] [--recursive] -- <path>` with `allowInteractiveAuth: true` (lets Git Credential Manager prompt for unknown hosts).
 
+### Updates (`UpdateChecker`, `UpdateService`, Velopack)
+- Only runs for an installed build (`IUpdateService.IsInstalled`); loose/VS runs skip it.
+- **Startup + every 6 hours, silent:** `MainWindow.Loaded` → `MainViewModel.CheckForUpdatesOnStartupAsync`, then a `DispatcherTimer` (`MainViewModel.UpdateCheckInterval`, one constant, no setting) ticks `OnUpdateTimerTickAsync`. No dialogs; a failure goes to the status bar **at most once per app run**. A tick is skipped while a check runs. The timer stops once an update is downloaded (update bar shown) and when the main window closes.
+- **Manual check** (Settings → Check for updates) uses the same `UpdateChecker`.
+- **Explicit outcomes:** `UpdateChecker.RunCheckAsync` returns `UpdateCheckOutcome` (`UpToDate`, `UpdateReady(version)`, `AlreadyChecking`); errors throw. The manual check maps them to "You're up to date.", "Version X is ready. Restart to update." and "An update check is already running…" (it does not wait for the running check). Once an update is downloaded, no further check is made; the manual check just reports the ready version.
+- Tests use a fake `IUpdateService` and call the tick method directly.
+
 ### Script generation (`CommandGenerator`)
 - `.bat`: `chcp 65001` on line 2, UTF-8 **without BOM**, `%` escaped as `%%` (`BatEscape`), values quoted, `if errorlevel 1 goto :failed` after each essential step.
 - `.sh`: **LF line endings** (`ToLf`), all values single-quoted (`ShQuote`), `|| fail` after each essential step.
