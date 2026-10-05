@@ -29,6 +29,7 @@ namespace GitCheckoutManager.Models
     /// <param name="DisplayPath">Forward slashes, relative to the checkout root (e.g. <c>external/lib/vendor/x</c>).</param>
     /// <param name="Depth">0 for a top-level submodule, 1 for one inside it, and so on.</param>
     /// <param name="CurrentBranch">Local branch HEAD is on inside a populated submodule; null when detached (or not populated).</param>
+    /// <param name="OriginUrl">The populated folder's own <c>origin</c> URL (<c>remote get-url origin</c>, local); null when not populated or it has none. Used to group rows by remote.</param>
     public sealed record SubmoduleInfo(
         string Path,
         string? Name,
@@ -42,7 +43,8 @@ namespace GitCheckoutManager.Models
         string RepoRoot = "",
         string DisplayPath = "",
         int Depth = 0,
-        string? CurrentBranch = null)
+        string? CurrentBranch = null,
+        string? OriginUrl = null)
     {
         /// <summary>The part of <see cref="DisplayPath"/> in front of <see cref="Path"/>, including its trailing slash; empty at depth 0.</summary>
         public string DisplayPrefix =>

@@ -258,19 +258,28 @@ namespace GitCheckoutManager.Services
             return new SwitchCheck(dirty, unreferenced);
         }
 
-        public async Task<GitResult> SwitchBranchAsync(SubmoduleInfo sub, string branch,
+        public async Task<SwitchResult> SwitchBranchAsync(SubmoduleInfo sub, string branch,
             Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(branch) || branch.StartsWith('-'))
-                return new GitResult(1, string.Empty, $"'{branch}' is not a valid branch name.");
+                return new SwitchResult(1, string.Empty, $"'{branch}' is not a valid branch name.");
 
             var folder = FolderOf(sub);
+
+            var auth = await AuthForOriginAsync(folder, resolveAuth, ct);
 
             // An explicit refspec makes sure origin/<branch> exists even in a single-branch clone.
             var fetch = await _gitService.RunAsync(
                 new[] { "-C", folder, "fetch", "origin", $"+refs/heads/{branch}:refs/remotes/origin/{branch}" }, null,
-                await AuthForOriginAsync(folder, resolveAuth, ct), ct, allowInteractiveAuth: true);
-            if (fetch.ExitCode != 0) return fetch;
+                auth, ct, allowInteractiveAuth: true);
+            if (fetch.ExitCode != 0)
+            {
+                // Exit code 2 of ls-remote --exit-code = the remote answered and has no such branch.
+                var probe = await _gitService.RunAsync(
+                    new[] { "-C", folder, "ls-remote", "--exit-code", "--heads", "origin", $"refs/heads/{branch}" }, null,
+                    auth, ct, allowInteractiveAuth: true);
+                return SwitchResult.From(fetch, probe.ExitCode == 2 ? SwitchOutcome.BranchNotOnRemote : SwitchOutcome.None);
+            }
 
             var local = await _gitService.RunAsync(
                 new[] { "-C", folder, "rev-parse", "--verify", "-q", $"refs/heads/{branch}" }, null, null, ct);
@@ -279,22 +288,23 @@ namespace GitCheckoutManager.Services
             {
                 var create = await _gitService.RunAsync(
                     new[] { "-C", folder, "checkout", "-b", branch, "--track", $"origin/{branch}" }, null, null, ct);
-                return create.ExitCode == 0 ? new GitResult(0, string.Empty, string.Empty) : create;
+                return create.ExitCode == 0 ? new SwitchResult(0, string.Empty, string.Empty) : SwitchResult.From(create);
             }
 
             var checkout = await _gitService.RunAsync(new[] { "-C", folder, "checkout", branch, "--" }, null, null, ct);
-            if (checkout.ExitCode != 0) return checkout;
+            if (checkout.ExitCode != 0) return SwitchResult.From(checkout);
 
             var merge = await _gitService.RunAsync(
                 new[] { "-C", folder, "merge", "--ff-only", $"origin/{branch}" }, null, null, ct);
-            if (merge.ExitCode == 0) return new GitResult(0, string.Empty, string.Empty);
+            if (merge.ExitCode == 0) return new SwitchResult(0, string.Empty, string.Empty);
 
             // Only a branch with commits of its own is "left as is"; any other merge failure is a real error.
             var behind = await _gitService.RunAsync(
                 new[] { "-C", folder, "merge-base", "--is-ancestor", "HEAD", $"origin/{branch}" }, null, null, ct);
             return behind.ExitCode == 1
-                ? new GitResult(0, $"Local branch {branch} has commits that aren't on origin — left as is.", string.Empty)
-                : merge;
+                ? new SwitchResult(0, $"Local branch {branch} has commits that aren't on origin — left as is.", string.Empty,
+                    SwitchOutcome.LeftAsIs)
+                : SwitchResult.From(merge);
         }
 
         public async Task<GitResult> ResetToRecordedAsync(SubmoduleInfo sub, CancellationToken ct = default)
@@ -414,9 +424,10 @@ namespace GitCheckoutManager.Services
                 if (local.ExitCode == 0 && local.StdOut.Trim().Length > 0) effectiveUrl = local.StdOut.Trim();
             }
 
-            SubmoduleInfo Make(SubmoduleState state, string? current = null, string? currentBranch = null) =>
+            SubmoduleInfo Make(SubmoduleState state, string? current = null, string? currentBranch = null,
+                string? originUrl = null) =>
                 new(path, name, url, branch, pinnedSha, current, state, overridden, effectiveUrl, root, displayPath, depth,
-                    currentBranch);
+                    currentBranch, originUrl);
 
             // A populated submodule has a ".git" file (gitdir pointer) or folder of its own.
             var dotGit = Path.Combine(folder, ".git");
@@ -437,13 +448,20 @@ namespace GitCheckoutManager.Services
                 new[] { "-C", folder, "symbolic-ref", "--short", "-q", "HEAD" }, null, null, ct);
             var currentBranch = symbolic.ExitCode == 0 && symbolic.StdOut.Trim().Length > 0 ? symbolic.StdOut.Trim() : null;
 
-            if (!registered) return Make(SubmoduleState.ManuallyCloned, current, currentBranch);
+            // Local only (no network): lets the window group rows by remote.
+            var originResult = await _gitService.RunAsync(
+                new[] { "-C", folder, "remote", "get-url", "origin" }, null, null, ct);
+            var originUrl = originResult.ExitCode == 0 && originResult.StdOut.Trim().Length > 0
+                ? originResult.StdOut.Trim()
+                : null;
+
+            if (!registered) return Make(SubmoduleState.ManuallyCloned, current, currentBranch, originUrl);
 
             return Make(
                 string.Equals(current, pinnedSha, StringComparison.OrdinalIgnoreCase)
                     ? SubmoduleState.Ready
                     : SubmoduleState.DifferentCommit,
-                current, currentBranch);
+                current, currentBranch, originUrl);
         }
 
         private static string? FirstLine(string text) => text

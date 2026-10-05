@@ -60,10 +60,11 @@ namespace GitCheckoutManager.Services
 
         /// <summary>
         /// Fetches <paramref name="branch"/> from origin and checks it out: a new tracking branch, or the existing
-        /// local one fast-forwarded. A local branch with commits of its own stays as it is and the result's
-        /// <c>StdOut</c> says so (exit code 0). Never discards commits. Call <see cref="CheckSwitchSafetyAsync"/> first.
+        /// local one fast-forwarded. A local branch with commits of its own stays as it is: exit code 0, the
+        /// result's <c>StdOut</c> says so and <see cref="SwitchResult.LeftAsIs"/> is set. Never discards commits.
+        /// Call <see cref="CheckSwitchSafetyAsync"/> first.
         /// </summary>
-        Task<GitResult> SwitchBranchAsync(SubmoduleInfo sub, string branch, Func<string, GitAuth?> resolveAuth,
+        Task<SwitchResult> SwitchBranchAsync(SubmoduleInfo sub, string branch, Func<string, GitAuth?> resolveAuth,
             CancellationToken ct = default);
 
         /// <summary>Refuses a dirty folder, then detaches HEAD at the commit the main repo records.</summary>
