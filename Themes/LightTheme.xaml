@@ -208,19 +208,7 @@
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
                                           RecognizesAccessKey="True"
-                                          TextElement.Foreground="{TemplateBinding Foreground}">
-                            <!-- A string header renders as a TextBlock, which would otherwise take the theme-wide TextBlock style -->
-                            <ContentPresenter.Resources>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=MenuItem}}" Value="False">
-                                            <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ContentPresenter.Resources>
-                        </ContentPresenter>
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
