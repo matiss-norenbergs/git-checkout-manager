@@ -692,11 +692,19 @@ public class SubmoduleBranchSwitchTests
     private static SubmodulesViewModel Reopen(SpyService spy, string main, FakeDialogs dialogs, AppSettings settings) =>
         new(spy, main, NoAuth, dialogs, settings, new NullSettings());
 
+    /// <summary>A fresh clone of <paramref name="main"/>: the submodule is registered but empty (NotInitialized).</summary>
+    private static string FreshClone(GitFixture fx, string main)
+    {
+        var clone = Path.Combine(fx.Root, "clone");
+        GitFixture.Git(fx.Root, "clone", main, clone);
+        return clone;
+    }
+
     [RequiresGitFact]
     public async Task Target_is_pinned_after_initializing_closing_and_reopening()
     {
         using var fx = new GitFixture();
-        var main = AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib");
+        var main = FreshClone(fx, AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib"));
         var settings = new AppSettings();
         var spy = new SpyService();
         var dialogs = new FakeDialogs();
@@ -704,6 +712,7 @@ public class SubmoduleBranchSwitchTests
         var first = Reopen(spy, main, dialogs, settings);
         await first.RefreshAsync();
         Assert.Equal(SubmoduleTarget.Pinned, first.Target);
+        Assert.Equal(SubmoduleState.NotInitialized, first.Rows.Single().State);
         foreach (var r in first.Rows) r.IsSelected = true;
         await first.InitializeSelectedCommand.ExecuteAsync(null);
         Assert.Equal(new[] { "external/lib" }, spy.InitPaths);
@@ -751,11 +760,12 @@ public class SubmoduleBranchSwitchTests
     public async Task Declining_the_latest_confirmation_leaves_the_selection_unchanged()
     {
         using var fx = new GitFixture();
-        var main = AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib");
+        var main = FreshClone(fx, AddSubmodule(fx, MakeOrigin(fx, "lib", "feature"), "external/lib"));
         var spy = new SpyService();
         var dialogs = new FakeDialogs { Confirm = false };
         var vm = Reopen(spy, main, dialogs, new AppSettings());
         await vm.RefreshAsync();
+        Assert.Equal(SubmoduleState.NotInitialized, vm.Rows.Single().State);
         vm.Target = SubmoduleTarget.LatestFromBranch;
         foreach (var r in vm.Rows) r.IsSelected = true;
 
