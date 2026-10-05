@@ -13,6 +13,7 @@ namespace GitCheckoutManager.Views
         public SubmodulesWindow()
         {
             InitializeComponent();
+            WindowSizing.FitToWorkArea(this, 1400, 820);
             // Cancel comes first while git is running, so a half-finished update is never abandoned silently.
             Closing += (_, e) => e.Cancel = (DataContext as SubmodulesViewModel)?.IsRunning == true;
             Closed += (_, _) => (DataContext as SubmodulesViewModel)?.Cancel();

@@ -5,8 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="clr-namespace:GitCheckoutManager.Controls"
         mc:Ignorable="d"
-        Title="Git Checkout Manager" Icon="Assets/app.ico" Height="760" Width="1220"
-        MinHeight="600" MinWidth="900">
+        Title="Git Checkout Manager" Icon="Assets/app.ico" Height="820" Width="1400"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
