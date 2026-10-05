@@ -36,4 +36,17 @@ namespace GitCheckoutManager.Views
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
             throw new NotSupportedException();
     }
+
+    /// <summary>
+    /// Radio button helper: IsChecked is true when the bound enum equals the ConverterParameter. Unchecking
+    /// is ignored (Binding.DoNothing) so the other radio's check is the only thing that changes the value.
+    /// </summary>
+    public sealed class EnumToBoolConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value != null && parameter != null && value.Equals(parameter);
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value is true && parameter != null ? parameter : Binding.DoNothing;
+    }
 }
