@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
 using GitCheckoutManager.Models;
 
@@ -13,6 +13,14 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty] private bool _isExpanded = false;
         [ObservableProperty] private bool _isVisible = true;
         [ObservableProperty] private bool _isSelected;
+
+        /// <summary>Manage tab only: whether the folder exists on disk. Set when the context menu opens, not when the tree loads.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(OnDiskToolTip))]
+        private bool _isOnDisk = true;
+
+        /// <summary>Why the open actions are disabled; null while the folder is on disk.</summary>
+        public string? OnDiskToolTip => IsOnDisk ? null : "This folder isn't on disk (outside the sparse selection or not applied yet).";
 
         public string Name { get; private set; } = string.Empty;
         public string FullPath { get; private set; } = string.Empty;

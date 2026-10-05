@@ -29,8 +29,9 @@ namespace GitCheckoutManager
             var checkoutService = new CheckoutService(gitService);
             var submoduleService = new SubmoduleService(gitService);
             var updateService   = new UpdateService();
+            var shellLauncher   = new ShellLauncher();
 
-            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService, updateService);
+            _viewModel = new MainViewModel(hostFactory, commandGen, settingsService, clipboard, dialogs, presetService, gitService, remoteTree, checkoutService, submoduleService, updateService, shellLauncher);
             DataContext = _viewModel;
             ApplySplitRatio(_viewModel.MainSplitRatio);
             Loaded += async (_, _) => await _viewModel.CheckForUpdatesOnStartupAsync();
@@ -40,6 +41,17 @@ namespace GitCheckoutManager
             _viewModel.MatchNavigated += OnMatchNavigated;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
+        }
+
+        /// <summary>Manage tab, folders only. The on-disk check runs here, each time the menu opens.</summary>
+        private void TreeNodeMenu_Opening(object sender, ContextMenuEventArgs e)
+        {
+            if (sender is not FrameworkElement { DataContext: TreeNodeViewModel { IsFolder: true } node } || !_viewModel.IsManageMode)
+            {
+                e.Handled = true; // no menu
+                return;
+            }
+            _viewModel.RefreshNodeOnDisk(node);
         }
 
         private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

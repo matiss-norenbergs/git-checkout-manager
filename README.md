@@ -134,6 +134,13 @@ Successful checkouts are added to the **recent checkouts** list in the Manage ta
 - The most recent checkout opens automatically when you switch to this tab.
 - Checkouts that no longer exist on disk are shown greyed out with **(missing)**. Selecting one offers to remove it from the list.
 
+### Opening a checkout or folder on disk
+
+- **Open in Explorer** and **Open in VS Code** next to the checkout bar open the checkout root. **Open in VS Code** only appears when VS Code is found (`code` on your PATH, or an installation under `%LocalAppData%\Programs\Microsoft VS Code` or `%ProgramFiles%\Microsoft VS Code`; looked up once per app run).
+- **Right-click a folder** in the tree for the same two actions. They are greyed out (with a tooltip) when the folder isn't on disk, for example outside the sparse selection or not applied yet. The disk is checked each time the menu opens.
+- In the **Submodules window**, the **⋯** menu of a checked-out submodule has the same two actions.
+- Problems (folder missing, launch failed) show in the status bar, or in the Submodules window's result line.
+
 The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
 
 The tree is read from the checkout itself, so it needs no network connection and matches exactly what's checked out, including local commits you haven't pushed. Your current folders are pre-ticked. If the checkout isn't sparse yet, every folder starts ticked, and applying turns sparse checkout on.

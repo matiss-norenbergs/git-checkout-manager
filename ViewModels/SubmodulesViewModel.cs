@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 using System.Windows;
@@ -99,7 +99,15 @@ namespace GitCheckoutManager.ViewModels
         public bool CanResetToRecorded =>
             IsPopulated && !string.Equals(Info.CurrentSha, Info.PinnedSha, StringComparison.OrdinalIgnoreCase);
 
-        public bool HasActions => CanSetUrl || CanResetUrl || CanCloneManually || CanSwitchBranch || CanResetToRecorded;
+        /// <summary>Populated rows can be opened in Explorer / VS Code (the disk is re-checked when the action runs).</summary>
+        public bool CanOpen => IsPopulated;
+
+        /// <summary>Set by the window's view model (VS Code detection is app-wide); false hides the item.</summary>
+        public bool CanOpenInVsCode => IsPopulated && VsCodeAvailable;
+
+        public bool VsCodeAvailable { get; init; }
+
+        public bool HasActions => CanOpen || CanSetUrl || CanResetUrl || CanCloneManually || CanSwitchBranch || CanResetToRecorded;
 
         /// <summary>"on main" or "detached"; empty for rows that are not populated.</summary>
         public string BranchLineText => !IsPopulated ? string.Empty
@@ -190,6 +198,7 @@ namespace GitCheckoutManager.ViewModels
         private readonly Func<IReadOnlyList<Repository>> _getRepositories;
         private readonly CheckoutInfo? _checkout;
         private readonly Action<string>? _copyToClipboard;
+        private readonly FolderOpener? _folderOpener;
         private readonly CancellationTokenSource _cts = new();
         private CancellationTokenSource? _runCts;
         private List<SubmoduleRowViewModel> _all = new();
@@ -219,8 +228,9 @@ namespace GitCheckoutManager.ViewModels
             AppSettings settings, ISettingsService settingsService,
             Func<IReadOnlyList<Repository>>? getRepositories = null,
             CheckoutInfo? checkout = null, Action<string>? copyToClipboard = null,
-            bool forceShowOnlyProblems = false)
+            bool forceShowOnlyProblems = false, FolderOpener? folderOpener = null)
         {
+            _folderOpener = folderOpener;
             _checkout = checkout;
             _copyToClipboard = copyToClipboard;
             _getRepositories = getRepositories ?? (() => Array.Empty<Repository>());
@@ -362,7 +372,7 @@ namespace GitCheckoutManager.ViewModels
 
         private SubmoduleRowViewModel CreateRow(SubmoduleInfo info)
         {
-            var row = new SubmoduleRowViewModel(info) { IsLocked = IsRunning };
+            var row = new SubmoduleRowViewModel(info) { IsLocked = IsRunning, VsCodeAvailable = IsVsCodeAvailable };
             var key = info.DisplayPath.Length > 0 ? info.DisplayPath : info.Path;
             if (_skips.TryGetValue(key, out var skip)) row.Skip = skip;
             if (_errors.TryGetValue(key, out var error)) row.Error = error;
@@ -571,6 +581,25 @@ namespace GitCheckoutManager.ViewModels
                     $"Skipped: the current commit in {row.DisplayPath} isn't on any branch, and you chose not to leave it behind.");
 
             return null;
+        }
+
+        // -- Row actions: open in Explorer / VS Code -------------------------------
+
+        public bool IsVsCodeAvailable => _folderOpener?.IsVsCodeAvailable ?? false;
+
+        [RelayCommand]
+        private void OpenInExplorer(SubmoduleRowViewModel? row) => OpenRow(row, vsCode: false);
+
+        [RelayCommand]
+        private void OpenInVsCode(SubmoduleRowViewModel? row) => OpenRow(row, vsCode: true);
+
+        private void OpenRow(SubmoduleRowViewModel? row, bool vsCode)
+        {
+            if (row == null || _folderOpener == null) return;
+
+            // Info.Path is relative to the repository that holds the submodule (RepoRoot), so nested rows resolve too.
+            var error = _folderOpener.Open(row.Info.RepoRoot.Length > 0 ? row.Info.RepoRoot : _root, row.Info.Path, vsCode);
+            if (error != null) ResultText = error;
         }
 
         // -- Row actions: fix a broken submodule for this checkout only ----------

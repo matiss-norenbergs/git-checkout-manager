@@ -173,6 +173,14 @@
                                                 Click="ActionsButton_Click">
                                             <Button.ContextMenu>
                                                 <ContextMenu>
+                                                    <MenuItem Header="Open in Explorer"
+                                                              Visibility="{Binding CanOpen, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.OpenInExplorerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
+                                                    <MenuItem Header="Open in VS Code"
+                                                              Visibility="{Binding CanOpenInVsCode, Converter={StaticResource BoolToVis}}"
+                                                              Command="{Binding PlacementTarget.Tag.OpenInVsCodeCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}"/>
                                                     <MenuItem Header="Set URL…"
                                                               Visibility="{Binding CanSetUrl, Converter={StaticResource BoolToVis}}"
                                                               Command="{Binding PlacementTarget.Tag.SetUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
