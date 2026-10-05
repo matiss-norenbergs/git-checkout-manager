@@ -28,15 +28,15 @@ Two tabs:
 
 ```
 Models/        AppSettings, Repository, Branch, TreeNode, TreePreset, RecentCheckout,
-               SubmoduleInfo, RemovalReviewModel, GitHostType, ThemeMode, AppMode
+               SubmoduleInfo, LocalChange (+LocalChangeSet), RemovalReviewModel, GitHostType, ThemeMode, AppMode
 Services/      GitService (runner), GitLabHostService, GitHubHostService, GitHostServiceFactory,
-               RemoteTreeService, CheckoutService, SubmoduleService, GitTreeParser,
+               RemoteTreeService, CheckoutService, SubmoduleService, GitTreeParser, GitStatusParser,
                CommandGenerator, SettingsService, PresetService, DialogService, ClipboardService,
                ShellLauncher/FolderOpener (open in Explorer/VS Code), TitleBarColorizer   (+ an I* interface for most)
-ViewModels/    MainViewModel (both tabs), TreeNodeViewModel, SettingsViewModel, SubmodulesViewModel
-Views/         SettingsWindow, RemovalReviewWindow, SubmodulesWindow, SubmoduleUrlWindow, SubmoduleBranchWindow, WindowSizing (helper)
+ViewModels/    MainViewModel (both tabs), TreeNodeViewModel, SettingsViewModel, SubmodulesViewModel, LocalChangesViewModel
+Views/         SettingsWindow, RemovalReviewWindow, SubmodulesWindow, LocalChangesWindow, SubmoduleUrlWindow, SubmoduleBranchWindow, WindowSizing (helper)
 Themes/        LightTheme.xaml, DarkTheme.xaml (brushes + implicit control styles),
-               ButtonStyles.xaml (shared keyed/implicit styles: buttons, expander, scrollbar)
+               ButtonStyles.xaml (shared keyed/implicit styles: buttons incl. LinkButton, expander, scrollbar)
 _bin/          prebuilt binaries, intentionally committed for now
 ```
 
@@ -58,7 +58,8 @@ _bin/          prebuilt binaries, intentionally committed for now
 - Branch changes are debounced (~400 ms) and cancel the previous load (`CancellationToken`, process tree kill). This protects the server.
 
 ### Manage tab (`CheckoutService`)
-- `OpenAsync`: `rev-parse --show-toplevel`, remote URL, branch, HEAD, `core.sparseCheckout`/`core.sparseCheckoutCone`, `sparse-checkout list`, `status --porcelain` count.
+- `OpenAsync`: `rev-parse --show-toplevel`, remote URL, branch, HEAD, `core.sparseCheckout`/`core.sparseCheckoutCone`, `sparse-checkout list`, and one `status --porcelain=v2 -z --untracked-files=all` run (parsed into `CheckoutInfo.LocalChanges`; `ChangedFileCount` is its `Count`, so the summary and the Local changes window can't disagree).
+- **Local changes window** (`LocalChangesWindow`, `LocalChangesViewModel`, via `IDialogService.ShowLocalChanges`): the "N local changes" part of the Manage summary line (`CheckoutSummaryBefore/LocalChangesText/CheckoutSummaryAfter`; a `LinkButton`, plain text at 0) opens it. **Read-only**: no staging, discarding, diffs or commits. Data comes from `ICheckoutService.GetLocalChangesAsync` = `status --porcelain=v2 -z --untracked-files=all` (never `--ignored`), parsed by the UI-free `GitStatusParser` into a `LocalChangeSet`: ordinary (`1`), rename/copy (`2`, original path is the next NUL token), unmerged (`u`) and untracked (`?`) entries; `#` headers and `!` entries are skipped; paths are split with a field-count limit so spaces survive. One row per file: a path with both staged and unstaged changes gets one combined label ("Staged + modified") and one group (Renamed > Deleted > Staged > Modified), so counts never double-count. A gitlink (mode 160000 in any mode field, or a submodule state field not starting `N`) is labelled "Submodule" with a hint to use the Submodules window. Groups display as Conflicted, Staged, Modified, Deleted, Renamed, Untracked. The window shows the snapshot from `OpenAsync`, then re-runs status itself (cancellable; closing the window cancels it) and pushes the result back so the summary count matches. Lists are capped at `LocalChangesViewModel.MaxRows` (2,000 rows, not virtualized) with an "…and N more" line; header totals stay exact.
 - Tree = `git ls-tree -r -t -z HEAD` **in the checkout itself** (offline; a blobless clone has all trees).
 - Baseline = current sparse paths. Pending changes = Added/Removed vs baseline (with "covered by ancestor" logic).
 - Apply (`ExecuteManageApplyAsync`): review removed folders via `git status --porcelain=v1 -z --ignored=matching --untracked-files=all`, then the RemovalReviewWindow (ignored deleted by default, untracked/changed kept by default, second confirmation for destructive choices), then optional `git restore`, `git sparse-checkout set` (with auth), selective `git clean -ffdX/-ffd/-ffdx`, empty-dir cleanup, last-resort delete. Finally it **re-reads the checkout and reports what is actually on disk**. `sparse-checkout set` exits 0 even when it leaves files behind, so the report never trusts the exit code alone.

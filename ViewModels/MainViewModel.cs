@@ -160,6 +160,12 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>Enables the checkout bar's "Open" menu.</summary>
         public bool HasOpenCheckout => CheckoutInfo != null;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
+
+        // The summary line is shown in three pieces so "N local changes" can be a link.
+        [ObservableProperty] private string _checkoutSummaryBefore = string.Empty;
+        [ObservableProperty] private string _localChangesText = string.Empty;
+        [ObservableProperty] private string _checkoutSummaryAfter = string.Empty;
+        [ObservableProperty] private bool _hasLocalChanges;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
         [ObservableProperty] private RecentCheckout? _selectedRecentCheckout;
         [ObservableProperty] private string _pendingChangesText = "No changes";
@@ -1357,7 +1363,8 @@ namespace GitCheckoutManager.ViewModels
             var info = CheckoutInfo;
             if (info == null)
             {
-                CheckoutSummary = string.Empty;
+                CheckoutSummary = CheckoutSummaryBefore = LocalChangesText = CheckoutSummaryAfter = string.Empty;
+                HasLocalChanges = false;
                 return;
             }
 
@@ -1372,9 +1379,42 @@ namespace GitCheckoutManager.ViewModels
                 : $"branch: {info.Branch} ({shortSha})");
 
             parts.Add($"{GetSelectedPaths().Count} folders selected");
-            parts.Add($"{info.ChangedFileCount} local changes");
 
-            CheckoutSummary = string.Join(" · ", parts) + _checkoutSummarySuffix;
+            CheckoutSummaryBefore = string.Join(" · ", parts) + " · ";
+            LocalChangesText = $"{info.ChangedFileCount} local changes";
+            CheckoutSummaryAfter = _checkoutSummarySuffix;
+            HasLocalChanges = info.ChangedFileCount > 0;
+            CheckoutSummary = CheckoutSummaryBefore + LocalChangesText + CheckoutSummaryAfter;
+            ShowLocalChangesCommand.NotifyCanExecuteChanged();
+        }
+
+        // ── Manage: local changes (read-only list) ────────────────────────────
+
+        private bool CanShowLocalChanges() => CheckoutInfo is { ChangedFileCount: > 0 };
+
+        [RelayCommand(CanExecute = nameof(CanShowLocalChanges))]
+        private void ShowLocalChanges()
+        {
+            var info = CheckoutInfo;
+            if (info == null) return;
+
+            var root = info.Root;
+            var vm = new LocalChangesViewModel(root, info.LocalChanges,
+                ct => _checkoutService.GetLocalChangesAsync(root, ct),
+                set => OnLocalChangesRefreshed(root, set));
+            _ = vm.RefreshCommand.ExecuteAsync(null); // re-reads while the window opens; it reports its own errors
+            _dialogService.ShowLocalChanges(vm);
+        }
+
+        /// <summary>Keeps the summary count in step with what the Local changes window just read.</summary>
+        private void OnLocalChangesRefreshed(string root, LocalChangeSet set)
+        {
+            if (CheckoutInfo == null ||
+                !string.Equals(CheckoutInfo.Root, root, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            CheckoutInfo = CheckoutInfo with { LocalChanges = set };
+            UpdateCheckoutSummary();
         }
 
         // ── Manage: pending changes ───────────────────────────────────────────

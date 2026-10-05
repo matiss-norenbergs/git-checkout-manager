@@ -137,6 +137,18 @@ Successful checkouts are added to the **recent checkouts** list in the Manage ta
 
 The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
 
+### Local changes
+
+The **N local changes** part of that line is a link (plain text when there are none). Click it to open the **Local changes** window, a read-only list of what Git reports as changed in the checkout:
+
+- The header shows the totals, e.g. *12 files changed: 3 staged, 7 modified, 2 untracked*.
+- Files are grouped as **Conflicted**, **Staged**, **Modified**, **Deleted**, **Renamed** and **Untracked**. Each row shows the path relative to the checkout and a status label; hover a row for the full path. A file that is both staged and modified appears once, as *Staged + modified*. Renames also show the old path.
+- Submodule entries are labelled **Submodule**; use the Submodules window to review or update them.
+- **Refresh** re-reads the status. The count in the summary line follows, and it is also updated after **Apply** and other Manage actions. Ignored files are never listed.
+- With more than 2,000 changed files, the first 2,000 are listed followed by *…and N more*; the header still shows the true totals.
+
+The window only shows information: it can't stage, discard, diff or commit anything.
+
 The tree is read from the checkout itself, so it needs no network connection and matches exactly what's checked out, including local commits you haven't pushed. Your current folders are pre-ticked. If the checkout isn't sparse yet, every folder starts ticked, and applying turns sparse checkout on.
 
 ### Opening a checkout or folder on disk

@@ -22,6 +22,9 @@ namespace GitCheckoutManager.Services
         /// <summary>Shows the modal, read-only Submodules window and returns when it is closed.</summary>
         void ShowSubmodules(SubmodulesViewModel vm);
 
+        /// <summary>Shows the modal, read-only Local changes window and returns when it is closed.</summary>
+        void ShowLocalChanges(LocalChangesViewModel vm);
+
         /// <summary>Shows the repository picker and returns the chosen, reachable URL, or null when cancelled.</summary>
         string? ShowSubmoduleUrl(SubmoduleUrlModel model);
 

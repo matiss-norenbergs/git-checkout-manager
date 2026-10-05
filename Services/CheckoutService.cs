@@ -41,14 +41,27 @@ namespace GitCheckoutManager.Services
 
             var sparsePaths = isSparse ? await GetSparsePathsAsync(root, isCone, ct) : new List<string>();
 
-            var status = await RunAsync(root, ct, "status", "--porcelain=v1", "-z");
-            var changedFileCount = status.ExitCode == 0
-                ? status.StdOut.Split('\0', StringSplitOptions.RemoveEmptyEntries).Length
-                : 0;
+            // One status run feeds both the summary count and the Local changes window's first view.
+            // A failing status (e.g. an unborn or broken repo) just shows no changes here, as before.
+            var status = await RunStatusAsync(root, ct);
+            var localChanges = status.ExitCode == 0 ? GitStatusParser.Parse(status.StdOut) : LocalChangeSet.Empty;
 
             return new CheckoutInfo(root, remoteUrl, string.IsNullOrEmpty(branch) ? null : branch,
-                headSha, isSparse, isCone, sparsePaths, changedFileCount);
+                headSha, isSparse, isCone, sparsePaths, localChanges);
         }
+
+        public async Task<LocalChangeSet> GetLocalChangesAsync(string root, CancellationToken ct = default)
+        {
+            var status = await RunStatusAsync(root, ct);
+            if (status.ExitCode != 0)
+                throw new InvalidOperationException(FirstLine(status.StdErr) ?? "git status failed.");
+
+            return GitStatusParser.Parse(status.StdOut);
+        }
+
+        // Never --ignored: ignored files aren't local changes.
+        private Task<GitResult> RunStatusAsync(string root, CancellationToken ct) =>
+            RunAsync(root, ct, "status", "--porcelain=v2", "-z", "--untracked-files=all");
 
         public async Task<List<TreeNode>> GetTreeAsync(string root, CancellationToken ct = default)
         {
