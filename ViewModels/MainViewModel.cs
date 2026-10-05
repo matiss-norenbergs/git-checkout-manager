@@ -152,6 +152,8 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(ShowSubmodulesCommand))]
         [NotifyCanExecuteChangedFor(nameof(DisableSparseCheckoutCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInExplorerCommand))]
+        [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInVsCodeCommand))]
         private CheckoutInfo? _checkoutInfo;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
         [ObservableProperty] private ObservableCollection<RecentCheckout> _recentCheckouts = new();
