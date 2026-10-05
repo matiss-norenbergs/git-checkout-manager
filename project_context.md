@@ -120,6 +120,7 @@ The tree uses `Controls/TreeCheckBox` (not `IsThreeState`): the middle state is 
 
 - Colors only via `DynamicResource` brushes from the theme dictionaries. Both `LightTheme.xaml` and `DarkTheme.xaml` must define every brush.
 - The themes contain an **implicit `TextBlock` style** that sets the foreground. Text inside coloured buttons gets its colour from `ColoredActionButtonBase` (a local TextBlock style using `OnAccentBrush`). Use plain `Content="…"` on buttons.
+- Menu item headers get their foreground from the `MenuItem` template's local `TextBlock` style (same pitfall as coloured buttons); disabled items use `DisabledControlForegroundBrush` and no hover. Keep the template identical in both themes.
 - `ButtonStyles.xaml` styles are `BasedOn` the theme's implicit Button style, resolved once at startup. Keep the Button style **identical** in both themes, or move it into `ButtonStyles.xaml`.
 - New windows: modal, owner = main window, themed via DynamicResource, `ItemsControl` + row templates rather than `DataGrid`.
 - Larger windows (main, Submodules) size themselves through `Views/WindowSizing.FitToWorkArea(window, preferredW, preferredH)` in the constructor after `InitializeComponent()`: capped to the primary work area minus 40 DIPs, never below MinWidth/MinHeight. Keep the XAML Width/Height as design-time values.
