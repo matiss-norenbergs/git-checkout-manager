@@ -269,7 +269,7 @@
                 <Button Content="Copy report" Width="110" Padding="10,5" Margin="0,0,8,0"
                         ToolTip="Copies a plain-text list of the problem submodules, to send to the repository maintainer"
                         Command="{Binding CopyReportCommand}"/>
-                <Button Content="Initialize selected" Style="{StaticResource AccentActionButton}"
+                <Button Content="{Binding InitializeButtonText}" Style="{StaticResource AccentActionButton}"
                         Command="{Binding InitializeSelectedCommand}"/>
                 <Button Content="Cancel" Width="90" Padding="10,5" Margin="0,0,8,0"
                         Command="{Binding CancelRunCommand}"

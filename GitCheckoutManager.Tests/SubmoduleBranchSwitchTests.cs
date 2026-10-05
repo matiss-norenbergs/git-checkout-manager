@@ -867,12 +867,14 @@ public class SubmoduleBranchSwitchTests
         Assert.Equal("1 selected", vm.SelectedText);
 
         // Pinned target: a clean Ready row has nothing to initialize.
+        Assert.Equal("Initialize selected (0)", vm.InitializeButtonText);
         Assert.False(vm.InitializeSelectedCommand.CanExecute(null));
         vm.SelectAllWithProblemsCommand.Execute(null);
         Assert.Empty(spy.InitPaths);
 
         // Latest from branch: the ticked Ready row is updated too.
         vm.Target = SubmoduleTarget.LatestFromBranch;
+        Assert.Equal("Initialize selected (1)", vm.InitializeButtonText);
         Assert.True(vm.InitializeSelectedCommand.CanExecute(null));
         await vm.InitializeSelectedCommand.ExecuteAsync(null);
         Assert.Equal(new[] { "external/a" }, spy.InitPaths);
@@ -948,9 +950,8 @@ public class SubmoduleBranchSwitchTests
             "Pulled 1 of 3: 0 updated, 1 already up to date. " +
             "1 skipped (uncommitted changes): external/a. 1 skipped (not on a branch): external/b.",
             vm.ResultText);
-        // Skipped rows keep their tick, the pulled one does not.
-        Assert.True(vm.Rows.Single(r => r.DisplayPath == "external/a").IsSelected);
-        Assert.False(vm.Rows.Single(r => r.DisplayPath == "external/c").IsSelected);
+        // Pull keeps every tick, skipped or not.
+        Assert.All(vm.Rows, r => Assert.True(r.IsSelected));
     }
 
     [RequiresGitFact]
@@ -1175,5 +1176,53 @@ public class SubmoduleBranchSwitchTests
 
         vm.ClearSelectionCommand.Execute(null);
         Assert.Equal(0, vm.SelectedCount);
+    }
+
+    [RequiresGitFact]
+    public async Task Bulk_switch_counts_a_branch_with_local_commits_as_switched_with_a_note()
+    {
+        using var fx = new GitFixture();
+        var originA = MakeOrigin(fx, "liba", "feature");
+        var main = AddSubmodules(fx, (originA, "external/a"), (MakeOrigin(fx, "libb", "feature"), "external/b"));
+        var svc = NewService();
+        var folderA = FolderOf(main, "external/a");
+
+        // a: local feature with its own commit, origin's feature moves on, a goes back to main.
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "feature", NoAuth)).ExitCode);
+        CommitOnCurrentBranch(folderA, "local.txt");
+        var local = Head(folderA);
+        GitFixture.Git(originA, "checkout", "feature");
+        CommitOnCurrentBranch(originA, "remote.txt");
+        GitFixture.Git(originA, "checkout", "main");
+        Assert.Equal(0, (await svc.SwitchBranchAsync(await Row(svc, main, "external/a"), "main", NoAuth)).ExitCode);
+
+        var (vm, _, dialogs) = await OpenWindowModel(main);
+        await Tick(vm);
+        dialogs.BranchToPick = "feature";
+
+        await vm.SwitchSelectedCommand.ExecuteAsync(null);
+
+        var a = vm.Rows.Single(r => r.DisplayPath == "external/a");
+        Assert.Equal("feature", a.Info.CurrentBranch);
+        Assert.Equal(local, Head(folderA));
+        Assert.Equal(SubmoduleSkipReason.None, a.Skip);
+        Assert.False(a.HasError);
+        Assert.Equal("Switched 2 of 2 to feature (1 not fast-forwarded, local commits: external/a).", vm.ResultText);
+        Assert.All(vm.Rows, r => Assert.True(r.IsSelected));
+    }
+
+    [RequiresGitFact]
+    public async Task Pull_with_only_a_not_initialized_row_ticked_is_disabled_and_pulls_nothing()
+    {
+        using var fx = new GitFixture();
+        var main = FreshClone(fx, AddSubmodules(fx, (MakeOrigin(fx, "liba", "feature"), "external/a")));
+        var (vm, spy, _) = await OpenWindowModel(main);
+        Assert.Equal(SubmoduleState.NotInitialized, vm.Rows.Single().State);
+
+        vm.Rows.Single().IsSelected = true;
+
+        Assert.Equal("Pull (0)", vm.PullButtonText);
+        Assert.False(vm.PullSelectedCommand.CanExecute(null));
+        Assert.Equal(0, spy.SwitchCalls);
     }
 }

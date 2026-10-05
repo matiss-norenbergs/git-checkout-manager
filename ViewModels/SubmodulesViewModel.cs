@@ -424,18 +424,21 @@ namespace GitCheckoutManager.ViewModels
                 .ToList();
         }
 
-        /// <summary>Pull acts on the ticked populated rows, or on every visible one when nothing is ticked.</summary>
+        /// <summary>Pull acts on the ticked populated rows, or on every visible one only when nothing is ticked.</summary>
         private List<SubmoduleRowViewModel> PullRows()
         {
-            var ticked = TickedRows().Where(r => r.CanSwitch).ToList();
-            return ticked.Count > 0 ? ticked : Rows.Where(r => r.CanPull).ToList();
+            var ticked = TickedRows();
+            return ticked.Count == 0
+                ? Rows.Where(r => r.CanPull).ToList()
+                : ticked.Where(r => r.CanSwitch).ToList();
         }
 
         private List<SubmoduleRowViewModel> SwitchRows() => TickedRows().Where(r => r.CanSwitch).ToList();
 
         private List<SubmoduleRowViewModel> ResetRows() => TickedRows().Where(r => r.CanResetToRecorded).ToList();
 
-        private bool PullIsAll => TickedRows().All(r => !r.CanSwitch);
+        /// <summary>"Pull all" only when nothing is ticked.</summary>
+        private bool PullIsAll => TickedRows().Count == 0;
 
         public int SelectedCount => TickedRows().Count;
         public bool HasSelection => SelectedCount > 0;
@@ -450,6 +453,8 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
+        public string InitializeButtonText => $"Initialize selected ({SelectedRows().Count})";
+
         public string SwitchButtonText => $"Switch branch… ({SwitchRows().Count})";
 
         public string PullToolTip
@@ -462,6 +467,7 @@ namespace GitCheckoutManager.ViewModels
                 if (PullIsAll) return text + " Nothing ticked: pulls every submodule shown that is on a branch.";
 
                 var ticked = TickedRows();
+                if (!PullRows().Any(r => r.CanPull)) text += " None of the ticked rows can be pulled.";
                 var detached = ticked.Count(r => r.CanSwitch && !r.CanPull);
                 var ignored = ticked.Count(r => !r.CanSwitch);
                 if (detached > 0) text += $" {detached} ticked not on a branch will be skipped.";
@@ -508,7 +514,7 @@ namespace GitCheckoutManager.ViewModels
             foreach (var name in new[]
             {
                 nameof(SelectedCount), nameof(HasSelection), nameof(SelectedText), nameof(PullButtonText),
-                nameof(SwitchButtonText), nameof(PullToolTip), nameof(SwitchToolTip)
+                nameof(SwitchButtonText), nameof(InitializeButtonText), nameof(PullToolTip), nameof(SwitchToolTip)
             })
                 OnPropertyChanged(name);
         }
@@ -574,12 +580,12 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>
         /// Runs <paramref name="action"/> on each target strictly one after another, in list order. Locks the
         /// rows, shows Queued/Working, records skips and failures on their rows (a failure never stops the
-        /// others), reloads, and re-ticks every ticked row that did not succeed so the user can simply run again.
+        /// others), reloads, and re-ticks the ticked rows (all of them, or with <c>clearSucceeded</c> only those that did not succeed) so the user can simply run again.
         /// <paramref name="buildResultText"/> turns the outcome into the line shown above the list.
         /// </summary>
         private async Task RunBatchAsync(List<SubmoduleRowViewModel> targets,
             Func<SubmoduleRowViewModel, CancellationToken, Task<BatchOutcome>> action,
-            Func<BatchRun, string> buildResultText)
+            Func<BatchRun, string> buildResultText, bool clearSucceeded)
         {
             if (targets.Count == 0) return;
 
@@ -658,8 +664,10 @@ namespace GitCheckoutManager.ViewModels
                 }
 
                 var run = new BatchRun(done, targets.Count, cancelled);
-                var stillSelected = ticked
-                    .Except(run.Succeeded.Select(d => d.Row.DisplayPath))
+                // Initialize unticks what succeeded; the other actions keep every tick (Pull all ticked nothing).
+                var stillSelected = (clearSucceeded
+                        ? ticked.Except(run.Succeeded.Select(d => d.Row.DisplayPath))
+                        : ticked)
                     .ToHashSet(StringComparer.Ordinal);
 
                 await LoadAsync();
@@ -715,7 +723,8 @@ namespace GitCheckoutManager.ViewModels
                 run => BuildResultText(run.Succeeded.Count, run.Total,
                     run.Done.Where(d => d.Outcome.Status == BatchStatus.Failed).Select(d => d.Row.DisplayPath).ToList(),
                     run.Done.Where(d => d.Outcome.Status == BatchStatus.Skipped).Select(d => d.Row.DisplayPath).ToList(),
-                    run.Cancelled));
+                    run.Cancelled),
+                clearSucceeded: true);
         }
 
         /// <summary>Marks a refusal in <see cref="GitResult.ExitCode"/>; its StdErr is the row's error text.</summary>
@@ -892,11 +901,13 @@ namespace GitCheckoutManager.ViewModels
                 return BatchOutcome.Skipped(SubmoduleSkipReason.BranchNotOnRemote,
                     $"The branch {branch} doesn't exist on this submodule's origin.");
             if (result.ExitCode != 0) return BatchOutcome.Failed(TailOf(result.ToGitResult()));
-            if (result.Outcome == SwitchOutcome.LeftAsIs)
+            // Pull: nothing moved. Switch: the checkout already happened, only the fast-forward was left out.
+            if (result.Outcome == SwitchOutcome.LeftAsIs && pull)
                 return BatchOutcome.Skipped(SubmoduleSkipReason.LocalCommits, result.StdOut);
 
             var after = await _submoduleService.GetAsync(
                 row.Info.RepoRoot, row.Path, ct, row.Info.DisplayPrefix, row.Depth);
+            if (result.Outcome == SwitchOutcome.LeftAsIs) return BatchOutcome.Success(after, "notff");
             var moved = !string.Equals(after?.CurrentSha, shaBefore, StringComparison.OrdinalIgnoreCase);
             return BatchOutcome.Success(after, pull ? (moved ? "updated" : "uptodate") : null);
         }
@@ -928,7 +939,8 @@ namespace GitCheckoutManager.ViewModels
                     var text = $"Pulled {ok.Count} of {run.Total}";
                     text += ok.Count > 0 ? $": {updated} updated, {ok.Count - updated} already up to date." : ".";
                     return JoinText(text, ProblemSummary(run));
-                });
+                },
+                clearSucceeded: false);
         }
 
         /// <summary>Remote branches of every row, one listing per distinct remote. Fills <paramref name="availability"/> by row path.</summary>
@@ -1043,7 +1055,15 @@ namespace GitCheckoutManager.ViewModels
                     var result = await _submoduleService.SwitchBranchAsync(fresh!, branch, _resolveAuth, ct);
                     return await SwitchOutcomeAsync(row, result, branch, fresh!.CurrentSha, pull: false, ct);
                 },
-                run => JoinText($"Switched {run.Succeeded.Count} of {run.Total} to {branch}.", ProblemSummary(run)));
+                run =>
+                {
+                    var notFf = run.Succeeded.Where(d => d.Outcome.Tag == "notff").Select(d => d.Row.DisplayPath).ToList();
+                    var note = notFf.Count > 0
+                        ? $" ({notFf.Count} not fast-forwarded, local commits: {string.Join(", ", notFf)})"
+                        : string.Empty;
+                    return JoinText($"Switched {run.Succeeded.Count} of {run.Total} to {branch}{note}.", ProblemSummary(run));
+                },
+                clearSucceeded: false);
         }
 
         /// <summary>Safety check of every row up front. Null when cancelled. A row whose check fails is left out (its own run reports it).</summary>
@@ -1103,7 +1123,8 @@ namespace GitCheckoutManager.ViewModels
                     var result = await _submoduleService.ResetToRecordedAsync(fresh, ct);
                     return result.ExitCode == 0 ? BatchOutcome.Success() : BatchOutcome.Failed(TailOf(result));
                 },
-                run => JoinText($"Reset {run.Succeeded.Count} of {run.Total} to the recorded commit.", ProblemSummary(run)));
+                run => JoinText($"Reset {run.Succeeded.Count} of {run.Total} to the recorded commit.", ProblemSummary(run)),
+                clearSucceeded: false);
         }
 
         private static string JoinText(string head, string tail) => tail.Length == 0 ? head : $"{head} {tail}";

@@ -277,7 +277,7 @@ namespace GitCheckoutManager.Services
                 // Exit code 2 of ls-remote --exit-code = the remote answered and has no such branch.
                 var probe = await _gitService.RunAsync(
                     new[] { "-C", folder, "ls-remote", "--exit-code", "--heads", "origin", $"refs/heads/{branch}" }, null,
-                    auth, ct, allowInteractiveAuth: true);
+                    auth, ct, allowInteractiveAuth: false);
                 return SwitchResult.From(fetch, probe.ExitCode == 2 ? SwitchOutcome.BranchNotOnRemote : SwitchOutcome.None);
             }
 
