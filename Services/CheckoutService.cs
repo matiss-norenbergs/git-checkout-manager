@@ -70,8 +70,11 @@ namespace GitCheckoutManager.Services
             BranchSwitcher.IsDetachedOnUnreferencedCommitAsync(_gitService, root, ct);
 
         public Task<SwitchResult> SwitchBranchAsync(string root, string branch, GitAuth? auth, CancellationToken fetchCt = default, Action? fetchFinished = null) =>
-            // Fetch and checkout are user-triggered (a blobless checkout downloads blobs), hence interactive auth.
-            BranchSwitcher.SwitchAsync(_gitService, root, branch, auth, fetchCt, CancellationToken.None, interactiveCheckout: true, fetchFinished);
+            // No git command may run for an invalid name.
+            !BranchSwitcher.IsValidBranchName(branch)
+                ? Task.FromResult(new SwitchResult(1, string.Empty, $"'{branch}' is not a valid branch name."))
+                // Fetch and checkout are user-triggered (a blobless checkout downloads blobs), hence interactive auth.
+                : BranchSwitcher.SwitchAsync(_gitService, root, branch, auth, fetchCt, CancellationToken.None, interactiveCheckout: true, fetchFinished);
 
         public async Task<List<TreeNode>> GetTreeAsync(string root, CancellationToken ct = default)
         {

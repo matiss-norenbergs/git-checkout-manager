@@ -233,6 +233,10 @@ namespace GitCheckoutManager.Services
         public async Task<SwitchResult> SwitchBranchAsync(SubmoduleInfo sub, string branch,
             Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
         {
+            // No git command (not even the auth lookup) may run for an invalid name.
+            if (!BranchSwitcher.IsValidBranchName(branch))
+                return new SwitchResult(1, string.Empty, $"'{branch}' is not a valid branch name.");
+
             var folder = FolderOf(sub);
             var auth = await AuthForOriginAsync(folder, resolveAuth, ct);
             return await BranchSwitcher.SwitchAsync(_gitService, folder, branch, auth, ct, ct);

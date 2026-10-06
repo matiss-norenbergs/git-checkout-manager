@@ -52,6 +52,28 @@ namespace GitCheckoutManager.Services
                 .Any(l => l.Trim().StartsWith("refs/", StringComparison.Ordinal));
         }
 
+        /// <summary>The one branch-name rule: not empty or whitespace, and not option-like. Callers check it before any git call.</summary>
+        public static bool IsValidBranchName(string? branch) =>
+            !string.IsNullOrWhiteSpace(branch) && !branch.StartsWith('-');
+
+        /// <summary>
+        /// True when one of the <c>remote.origin.fetch</c> refspecs (<c>[+]src:dst</c>) has a source that covers
+        /// <c>refs/heads/&lt;branch&gt;</c>: an exact match or the <c>refs/heads/*</c> wildcard. A single-branch
+        /// clone lists only its own branch, and then <c>checkout --track origin/&lt;b&gt;</c> can't set up tracking.
+        /// </summary>
+        public static bool FetchRefspecCovers(IEnumerable<string> refspecs, string branch)
+        {
+            var wanted = $"refs/heads/{branch}";
+            foreach (var line in refspecs)
+            {
+                var spec = line.Trim().TrimStart('+');
+                var colon = spec.IndexOf(':');
+                var source = colon >= 0 ? spec[..colon] : spec;
+                if (source == wanted || source == "refs/heads/*") return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// Fetches <paramref name="branch"/> and checks it out. <paramref name="fetchCt"/> only covers the
         /// fetch (and its probe); once checkout starts it runs under <paramref name="ct"/>, so callers that
@@ -64,8 +86,22 @@ namespace GitCheckoutManager.Services
             IGitService git, string folder, string branch, GitAuth? auth,
             CancellationToken fetchCt, CancellationToken ct, bool interactiveCheckout = false, Action? fetchFinished = null)
         {
-            if (string.IsNullOrWhiteSpace(branch) || branch.StartsWith('-'))
+            if (!IsValidBranchName(branch))
                 return new SwitchResult(1, string.Empty, $"'{branch}' is not a valid branch name.");
+
+            // A single-branch clone only fetches its own branch; add this one to remote.origin.fetch so that
+            // plain `git fetch` keeps origin/<branch> current and `--track` works. Local config only, no network.
+            var configured = await git.RunAsync(
+                new[] { "-C", folder, "config", "--get-all", "remote.origin.fetch" }, null, null, fetchCt);
+            var refspecs = configured.ExitCode == 0
+                ? configured.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                : Array.Empty<string>();
+            if (!FetchRefspecCovers(refspecs, branch))
+            {
+                var add = await git.RunAsync(
+                    new[] { "-C", folder, "remote", "set-branches", "--add", "origin", branch }, null, null, fetchCt);
+                if (add.ExitCode != 0) return SwitchResult.From(add);
+            }
 
             // An explicit refspec makes sure origin/<branch> exists even in a single-branch clone.
             var fetch = await git.RunAsync(

@@ -85,6 +85,39 @@ public class ManageBranchSwitchTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("feature", Branch(clone));
+        Assert.Equal("origin/feature", GitFixture.Git(clone, "rev-parse", "--abbrev-ref", "feature@{upstream}").Trim());
+
+        // The branch was added to remote.origin.fetch, so a plain `git fetch` keeps it current.
+        var origin = Path.Combine(fx.Root, "origin");
+        GitFixture.Git(origin, "checkout", "feature");
+        GitFixture.Write(Path.Combine(origin, "later.txt"), "later");
+        GitFixture.Git(origin, "add", ".");
+        GitFixture.Git(origin, "commit", "-m", "later");
+        var tip = GitFixture.Git(origin, "rev-parse", "HEAD").Trim();
+        GitFixture.Git(clone, "fetch");
+        Assert.Equal(tip, GitFixture.Git(clone, "rev-parse", "origin/feature").Trim());
+    }
+
+    [Theory]
+    [InlineData("+refs/heads/*:refs/remotes/origin/*", true)]
+    [InlineData("refs/heads/feature:refs/remotes/origin/feature", true)]
+    [InlineData("+refs/heads/main:refs/remotes/origin/main", false)]
+    [InlineData("+refs/heads/feature2:refs/remotes/origin/feature2", false)]
+    [InlineData("+refs/tags/*:refs/tags/*", false)]
+    public void FetchRefspecCovers_matches_exact_or_wildcard_sources(string refspec, bool covered) =>
+        Assert.Equal(covered, BranchSwitcher.FetchRefspecCovers(new[] { refspec }, "feature"));
+
+    [Theory]
+    [InlineData("-x")]
+    [InlineData("--upload-pack=evil")]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task Invalid_branch_names_are_rejected_without_running_git(string branch)
+    {
+        var result = await new CheckoutService(new ThrowingGit()).SwitchBranchAsync("C:\\nowhere", branch, null);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("not a valid branch name", result.StdErr);
     }
 
     [RequiresGitFact]
@@ -527,6 +560,15 @@ public class ManageBranchSwitchTests
         }
     }
 
+    private sealed class ThrowingGit : IGitService
+    {
+        public Task<List<string>?> GetSparseCheckoutPathsAsync(string localRepoPath) => throw new InvalidOperationException("git was run");
+        public Task<GitResult> RunAsync(IEnumerable<string> args, string? workingDirectory = null, GitAuth? auth = null,
+            CancellationToken ct = default, bool allowInteractiveAuth = false) => throw new InvalidOperationException("git was run");
+        public Task<List<Branch>> ListRemoteBranchesAsync(string repoUrl, GitAuth? auth, CancellationToken ct = default) =>
+            throw new InvalidOperationException("git was run");
+    }
+
     /// <summary>Succeeds for everything and records each call, for an existing local branch (rev-parse --verify succeeds).</summary>
     private sealed class RecordingGit : IGitService
     {
@@ -538,7 +580,8 @@ public class ManageBranchSwitchTests
         {
             var list = args.ToList();
             Calls.Add(new Call(list[2], auth, allowInteractiveAuth)); // args start with -C <folder>
-            return Task.FromResult(new GitResult(0, string.Empty, string.Empty));
+            // `config --get-all remote.origin.fetch`: a normal clone, so no refspec has to be added.
+            return Task.FromResult(new GitResult(0, list[2] == "config" ? "+refs/heads/*:refs/remotes/origin/*\n" : string.Empty, string.Empty));
         }
 
         public Task<List<string>?> GetSparseCheckoutPathsAsync(string localRepoPath) => throw new NotSupportedException();
