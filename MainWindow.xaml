@@ -335,10 +335,31 @@
                     </Button>
                 </Grid>
 
-                <TextBlock Text="{Binding CheckoutSummary}" Margin="0,6,0,0"
-                           FontSize="11.5" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource MutedTextBrush}"
-                           ToolTip="{Binding CheckoutSummary}"/>
+                <!-- Summary line; "N local changes" opens the read-only Local changes window (plain text at 0). -->
+                <WrapPanel Margin="0,6,0,0" ToolTip="{Binding CheckoutSummary}">
+                    <TextBlock Text="{Binding CheckoutSummaryBefore}" FontSize="11.5"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                    <Button Content="{Binding LocalChangesText}" FontSize="11.5"
+                            Style="{StaticResource LinkButton}"
+                            Command="{Binding ShowLocalChangesCommand}"
+                            Visibility="{Binding HasLocalChanges, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Show the changed files (read-only)"/>
+                    <TextBlock Text="{Binding LocalChangesText}" FontSize="11.5"
+                               Foreground="{DynamicResource MutedTextBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasLocalChanges}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding CheckoutSummaryAfter}" FontSize="11.5"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                </WrapPanel>
             </StackPanel>
         </Border>
 

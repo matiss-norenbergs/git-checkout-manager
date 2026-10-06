@@ -70,6 +70,12 @@ namespace GitCheckoutManager.Services
             window.ShowDialog();
         }
 
+        public void ShowLocalChanges(LocalChangesViewModel vm)
+        {
+            var window = new LocalChangesWindow { DataContext = vm, Owner = Application.Current?.MainWindow };
+            window.ShowDialog();
+        }
+
         public string? ShowSubmoduleUrl(SubmoduleUrlModel model)
         {
             // Owner is the Submodules window that is currently active, falling back to the main window.
