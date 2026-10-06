@@ -52,6 +52,16 @@ namespace GitCheckoutManager.Services
             return window.ShowDialog() == true;
         }
 
+        public ThreeWayChoice ShowThreeWayChoice(string title, string message, string primary, string? secondary = null)
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            var window = new MessageWindow(title, message, null, confirm: false, destructive: false) { Owner = owner };
+            window.UseThreeWay(primary, secondary);
+            window.ShowDialog();
+            return window.Choice;
+        }
+
         public RemovalReviewChoices? ShowRemovalReview(RemovalReviewModel model)
         {
             var window = new RemovalReviewWindow(model) { Owner = Application.Current?.MainWindow };

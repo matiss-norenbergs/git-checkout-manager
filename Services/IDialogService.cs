@@ -3,6 +3,8 @@ using GitCheckoutManager.ViewModels;
 
 namespace GitCheckoutManager.Services
 {
+    public enum ThreeWayChoice { Cancel, Primary, Secondary }
+
     public interface IDialogService
     {
         string? ShowSaveFileDialog(string filter, string defaultExtension, string defaultFileName);
@@ -11,6 +13,9 @@ namespace GitCheckoutManager.Services
 
         /// <summary>Yes/No question. <paramref name="details"/> (e.g. a file list) shows in a scrollable box; <paramref name="destructive"/> makes Yes the red button.</summary>
         bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false);
+        /// <summary>Three-way question: <paramref name="primary"/> and <paramref name="secondary"/> buttons plus Cancel (<paramref name="secondary"/> null hides the middle button).</summary>
+        ThreeWayChoice ShowThreeWayChoice(string title, string message, string primary, string? secondary = null);
+
         string? ShowInputDialog(string title, string prompt, string defaultValue = "");
 
         /// <summary>Returns the user's per-group deletion choices, or null when the dialog was cancelled.</summary>

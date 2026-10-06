@@ -9,6 +9,9 @@ namespace GitCheckoutManager.Models
         /// <summary>The submodule's path (single mode); in multi mode only a label.</summary>
         public required string DisplayPath { get; init; }
 
+        /// <summary>Single mode: replaces the default "Switch the branch of {DisplayPath}" header (the Manage tab switches the checkout itself).</summary>
+        public string? Header { get; init; }
+
         /// <summary>Branch HEAD is on now; null when detached. Single mode only.</summary>
         public string? CurrentBranch { get; init; }
 

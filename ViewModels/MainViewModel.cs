@@ -154,6 +154,7 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(DisableSparseCheckoutCommand))]
         [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInExplorerCommand))]
         [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInVsCodeCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SwitchBranchCommand))]
         [NotifyPropertyChangedFor(nameof(HasOpenCheckout))]
         private CheckoutInfo? _checkoutInfo;
 
@@ -161,7 +162,9 @@ namespace GitCheckoutManager.ViewModels
         public bool HasOpenCheckout => CheckoutInfo != null;
         [ObservableProperty] private string _checkoutSummary = string.Empty;
 
-        // The summary line is shown in three pieces so "N local changes" can be a link.
+        // The summary line is shown in pieces so the branch ("on main") and "N local changes" can be links.
+        [ObservableProperty] private string _checkoutSummaryHead = string.Empty;
+        [ObservableProperty] private string _branchLinkText = string.Empty;
         [ObservableProperty] private string _checkoutSummaryBefore = string.Empty;
         [ObservableProperty] private string _localChangesText = string.Empty;
         [ObservableProperty] private string _checkoutSummaryAfter = string.Empty;
@@ -185,7 +188,11 @@ namespace GitCheckoutManager.ViewModels
         // ── UI state ──────────────────────────────────────────────────────────
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(RestartToUpdateCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SwitchBranchCommand))]
         private bool _isLoading = false;
+
+        /// <summary>True while a branch switch is still fetching: the busy overlay then offers Cancel.</summary>
+        [ObservableProperty] private bool _isSwitchCancellable;
         [ObservableProperty] private bool _isConnected = false;
         [ObservableProperty] private string _statusMessage = "Enter your server URL and Personal Access Token, then click Connect.";
 
@@ -1363,28 +1370,21 @@ namespace GitCheckoutManager.ViewModels
             var info = CheckoutInfo;
             if (info == null)
             {
-                CheckoutSummary = CheckoutSummaryBefore = LocalChangesText = CheckoutSummaryAfter = string.Empty;
+                CheckoutSummary = CheckoutSummaryHead = BranchLinkText = CheckoutSummaryBefore = LocalChangesText = CheckoutSummaryAfter = string.Empty;
                 HasLocalChanges = false;
                 return;
             }
 
             var shortSha = info.HeadSha.Length >= 8 ? info.HeadSha[..8] : info.HeadSha;
-            var parts = new List<string>();
 
-            if (!string.IsNullOrWhiteSpace(info.RemoteUrl))
-                parts.Add($"origin: {info.RemoteUrl}");
-
-            parts.Add(info.Branch == null
-                ? $"detached at {shortSha}"
-                : $"branch: {info.Branch} ({shortSha})");
-
-            parts.Add($"{GetSelectedPaths().Count} folders selected");
-
-            CheckoutSummaryBefore = string.Join(" · ", parts) + " · ";
+            CheckoutSummaryHead = string.IsNullOrWhiteSpace(info.RemoteUrl) ? string.Empty : $"origin: {info.RemoteUrl} · ";
+            BranchLinkText = info.Branch == null ? $"detached at {shortSha}" : $"on {info.Branch}";
+            CheckoutSummaryBefore =
+                (info.Branch == null ? string.Empty : $" ({shortSha})") + $" · {GetSelectedPaths().Count} folders selected · ";
             LocalChangesText = $"{info.ChangedFileCount} local changes";
             CheckoutSummaryAfter = _checkoutSummarySuffix;
             HasLocalChanges = info.ChangedFileCount > 0;
-            CheckoutSummary = CheckoutSummaryBefore + LocalChangesText + CheckoutSummaryAfter;
+            CheckoutSummary = CheckoutSummaryHead + BranchLinkText + CheckoutSummaryBefore + LocalChangesText + CheckoutSummaryAfter;
             ShowLocalChangesCommand.NotifyCanExecuteChanged();
         }
 
@@ -1415,6 +1415,112 @@ namespace GitCheckoutManager.ViewModels
 
             CheckoutInfo = CheckoutInfo with { LocalChanges = set };
             UpdateCheckoutSummary();
+        }
+
+        // ── Manage: switch branch ─────────────────────────────────────────────
+
+        private CancellationTokenSource? _switchCts;
+        private BranchSwitchFlow? _switchFlow;
+
+        private bool CanSwitchBranch() => HasCheckout && !IsLoading;
+
+        [RelayCommand(CanExecute = nameof(CanSwitchBranch))]
+        private async Task SwitchBranchAsync()
+        {
+            var info = CheckoutInfo;
+            if (info == null || IsLoading) return;
+
+            var root = info.Root;
+            var remoteUrl = info.RemoteUrl;
+            RecomputePendingChanges();
+
+            _switchFlow ??= new BranchSwitchFlow(_checkoutService, _submoduleService, _dialogService);
+            using var cts = _switchCts = new CancellationTokenSource();
+
+            var request = new BranchSwitchRequest
+            {
+                Root = root,
+                CurrentBranch = info.Branch,
+                HasPendingFolderChanges = _addedPaths.Count > 0 || _removedPaths.Count > 0,
+                ApplyPendingAsync = () => ApplyManageCommand.ExecuteAsync(null),
+                // Reloading the checkout resets the ticked folders to the baseline (what git has now).
+                DiscardPendingAsync = () => OpenCheckoutAsync(root),
+                ResolveAuth = () => ResolveAuthForRemote(remoteUrl),
+                // The busy overlay (with Cancel) starts when the switch itself starts, not during the preflight dialogs.
+                SetStatus = m => { IsLoading = true; IsSwitchCancellable = true; StatusMessage = m; },
+                LocalChangesRead = set => OnLocalChangesRefreshed(root, set),
+                ShowLocalChanges = ShowLocalChanges,
+                FetchFinished = () => IsSwitchCancellable = false
+            };
+
+            BranchSwitchResult result;
+            try
+            {
+                result = await _switchFlow.RunAsync(request, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                result = new BranchSwitchResult(BranchSwitchStatus.Failed, $"Branch switch failed: {ex.Message}");
+            }
+            finally
+            {
+                IsSwitchCancellable = false;
+            }
+
+            var message = result.Message;
+            try
+            {
+                if (result.Attempted)
+                {
+                    IsLoading = true;
+                    // Re-read what is really on disk and rebuild the tree and baseline from the new HEAD.
+                    await OpenCheckoutAsync(root);
+                    message += await DescribeAfterSwitchAsync(root, result.SubmodulesBefore);
+                }
+            }
+            catch (Exception ex)
+            {
+                message += $" Could not inspect the result: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+                _switchCts = null;
+            }
+
+            StatusMessage = message;
+            _tabs.Manage.StatusMessage = message;
+        }
+
+        [RelayCommand]
+        private void CancelSwitch()
+        {
+            if (IsSwitchCancellable) _switchCts?.Cancel();
+        }
+
+        /// <summary>Appends missing selected folders and the submodule hint to the result message; offers the Submodules window.</summary>
+        private async Task<string> DescribeAfterSwitchAsync(string root, IReadOnlyList<SubmoduleInfo>? submodulesBefore)
+        {
+            var info = CheckoutInfo;
+            if (info == null || _switchFlow == null) return string.Empty;
+
+            var report = await _switchFlow.InspectAsync(root, info.SparsePaths, submodulesBefore);
+            var extra = string.Empty;
+
+            if (report.MissingFolders.Count > 0)
+                extra += $" Selected folders not on this branch (they stay in the sparse list): {string.Join(", ", report.MissingFolders)}.";
+
+            if (report.SubmodulesNeedingAttention > 0)
+            {
+                var n = report.SubmodulesNeedingAttention;
+                extra += $" {n} {(n == 1 ? "submodule is" : "submodules are")} not on the commit this branch records or not initialized.";
+                if (_dialogService.ShowConfirmation("Submodules",
+                        $"{n} {(n == 1 ? "submodule is" : "submodules are")} now on a different commit than this branch records, " +
+                        "or not initialized. Nothing was updated automatically.\n\nOpen Submodules… to review them?"))
+                    await ShowSubmodulesCoreAsync(onlyProblems: true);
+            }
+
+            return extra;
         }
 
         // ── Manage: pending changes ───────────────────────────────────────────

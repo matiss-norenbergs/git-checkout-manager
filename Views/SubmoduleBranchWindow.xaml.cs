@@ -40,7 +40,7 @@ namespace GitCheckoutManager.Views
             }
             else
             {
-                HeaderText.Text = $"Switch the branch of {model.DisplayPath}";
+                HeaderText.Text = model.Header ?? $"Switch the branch of {model.DisplayPath}";
                 CurrentText.Text = model.CurrentBranch is { Length: > 0 }
                     ? $"Currently on {model.CurrentBranch}"
                     : "Currently detached (not on a branch)";

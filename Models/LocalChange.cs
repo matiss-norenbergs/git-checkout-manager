@@ -34,6 +34,18 @@ namespace GitCheckoutManager.Models
 
         public int Count => Changes.Count;
 
+        /// <summary>
+        /// Entries that block a branch switch: any tracked change (staged, modified, deleted, renamed, conflicted).
+        /// Untracked files and submodule entries don't; git itself refuses the checkout when one would be overwritten.
+        /// </summary>
+        public IEnumerable<LocalChange> Blocking => Changes.Where(c => c.Group != LocalChangeGroup.Untracked && !c.IsSubmodule);
+
+        public int BlockingCount => Blocking.Count();
+
+        public int UntrackedCount => Changes.Count(c => c.Group == LocalChangeGroup.Untracked);
+
+        public int SubmoduleCount => Changes.Count(c => c.IsSubmodule);
+
         public int CountOf(LocalChangeGroup group) => Changes.Count(c => c.Group == group);
 
         /// <summary>"12 files changed: 3 staged, 7 modified, 2 untracked" (only non-empty groups), or "No local changes".</summary>

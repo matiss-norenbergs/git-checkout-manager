@@ -321,6 +321,7 @@ public class SubmoduleBranchSwitchTests
         }
         public bool ShowConfirmation(string title, string message, string? details = null, bool destructive = false) { Confirmations.Add(message); DestructiveFlags.Add(destructive); return Confirm; }
 
+        public ThreeWayChoice ShowThreeWayChoice(string title, string message, string primary, string? secondary = null) => throw new NotSupportedException();
         public void ShowLocalChanges(LocalChangesViewModel vm) => throw new NotSupportedException();
         public string? ShowSaveFileDialog(string filter, string defaultExtension, string defaultFileName) => throw new NotSupportedException();
         public string? ShowOpenFileDialog(string filter, string title = "Open File") => throw new NotSupportedException();
