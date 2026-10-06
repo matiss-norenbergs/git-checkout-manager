@@ -8,7 +8,7 @@ namespace GitCheckoutManager.Services
     /// <c>reset --hard</c>. A local branch that is not a fast-forward of origin is left exactly as it is.
     /// Callers check for a dirty working tree before calling.
     /// </summary>
-    internal static class BranchSwitcher
+    public static class BranchSwitcher
     {
         /// <summary><c>git ls-remote --heads origin</c> in <paramref name="folder"/>; throws with git's first message line.</summary>
         public static async Task<List<string>> ListRemoteBranchesAsync(
