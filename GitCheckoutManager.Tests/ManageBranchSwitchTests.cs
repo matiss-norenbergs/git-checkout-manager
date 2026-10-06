@@ -426,9 +426,124 @@ public class ManageBranchSwitchTests
         Assert.Equal("x2", File.ReadAllText(Path.Combine(clone, "apps", "api", "x.txt")));
         Assert.False(Directory.Exists(Path.Combine(clone, "apps", "web")));
 
-        var report = await flow.InspectAsync(clone, info.SparsePaths);
+        var report = await flow.InspectAsync(clone, info.SparsePaths, result.SubmodulesBefore);
         Assert.Equal(new[] { "docs" }, report.MissingFolders);
         Assert.Equal(0, report.SubmodulesNeedingAttention);
+    }
+
+    /// <summary>main records lib at its first commit; feature records the second; <c>other</c> is main's twin.</summary>
+    private static string MakeSubmoduleOrigin(GitFixture fx)
+    {
+        var lib = fx.Sub("lib");
+        GitFixture.Git(lib, "init");
+        GitFixture.Write(Path.Combine(lib, "l.txt"), "l1");
+        GitFixture.Git(lib, "add", ".");
+        GitFixture.Git(lib, "commit", "-m", "lib 1");
+
+        var origin = MakeOrigin(fx, "parent", new Uri(lib).AbsoluteUri);
+        GitFixture.Git(origin, "branch", "other", "main");
+
+        GitFixture.Write(Path.Combine(lib, "l.txt"), "l2");
+        GitFixture.Git(lib, "commit", "-am", "lib 2");
+        var second = GitFixture.Git(lib, "rev-parse", "HEAD").Trim();
+
+        var sub = Path.Combine(origin, "external", "lib");
+        GitFixture.Git(origin, "checkout", "feature");
+        GitFixture.Git(sub, "fetch", "origin");
+        GitFixture.Git(sub, "checkout", second);
+        GitFixture.Git(origin, "add", "external/lib");
+        GitFixture.Git(origin, "commit", "-m", "feature bumps lib");
+        GitFixture.Git(origin, "checkout", "main");
+        return origin;
+    }
+
+    [RequiresGitFact]
+    public async Task Report_counts_a_submodule_the_switch_moved_off_its_recorded_commit()
+    {
+        using var fx = new GitFixture();
+        var clone = Clone(fx, MakeSubmoduleOrigin(fx), "pclone", "--recurse-submodules");
+        var flow = NewFlow(new FakeDialogs { BranchToPick = "feature" });
+
+        var result = await flow.RunAsync(Request(clone), default);
+        Assert.Equal(BranchSwitchStatus.Switched, result.Status);
+        Assert.NotNull(result.SubmodulesBefore);
+
+        var info = await NewCheckout().OpenAsync(clone);
+        var report = await flow.InspectAsync(clone, info.SparsePaths, result.SubmodulesBefore);
+
+        Assert.Equal(1, report.SubmodulesNeedingAttention);
+    }
+
+    [RequiresGitFact]
+    public async Task Report_ignores_submodules_that_were_already_uninitialized_before_the_switch()
+    {
+        using var fx = new GitFixture();
+        // No --recurse-submodules: the submodule is not initialized before and after, and `other` records the same commit.
+        var clone = Clone(fx, MakeSubmoduleOrigin(fx), "pclone");
+        var flow = NewFlow(new FakeDialogs { BranchToPick = "other" });
+
+        var result = await flow.RunAsync(Request(clone), default);
+        Assert.Equal(BranchSwitchStatus.Switched, result.Status);
+
+        var info = await NewCheckout().OpenAsync(clone);
+        var report = await flow.InspectAsync(clone, info.SparsePaths, result.SubmodulesBefore);
+
+        Assert.Equal(0, report.SubmodulesNeedingAttention);
+    }
+
+    [Fact]
+    public async Task Fast_forward_merge_gets_the_same_auth_and_interactivity_as_the_checkout()
+    {
+        var auth = new GitAuth("user", "secret", "https://example.com/r.git");
+        var git = new RecordingGit();
+
+        var result = await BranchSwitcher.SwitchAsync(git, "repo", "feature", auth, default, default, interactiveCheckout: true);
+
+        Assert.Equal(0, result.ExitCode);
+        foreach (var verb in new[] { "fetch", "checkout", "merge" })
+        {
+            var call = Assert.Single(git.Calls, c => c.Verb == verb);
+            Assert.Same(auth, call.Auth);
+            Assert.True(call.Interactive, verb);
+        }
+        // Local-only calls stay without auth.
+        Assert.All(git.Calls.Where(c => c.Verb is "rev-parse" or "merge-base"), c => { Assert.Null(c.Auth); Assert.False(c.Interactive); });
+    }
+
+    [Fact]
+    public async Task Submodule_style_switch_keeps_checkout_and_merge_non_interactive_and_without_auth()
+    {
+        var auth = new GitAuth("user", "secret", "https://example.com/r.git");
+        var git = new RecordingGit();
+
+        await BranchSwitcher.SwitchAsync(git, "repo", "feature", auth, default, default);
+
+        Assert.Same(auth, Assert.Single(git.Calls, c => c.Verb == "fetch").Auth);
+        foreach (var verb in new[] { "checkout", "merge" })
+        {
+            var call = Assert.Single(git.Calls, c => c.Verb == verb);
+            Assert.Null(call.Auth);
+            Assert.False(call.Interactive, verb);
+        }
+    }
+
+    /// <summary>Succeeds for everything and records each call, for an existing local branch (rev-parse --verify succeeds).</summary>
+    private sealed class RecordingGit : IGitService
+    {
+        public sealed record Call(string Verb, GitAuth? Auth, bool Interactive);
+        public List<Call> Calls { get; } = new();
+
+        public Task<GitResult> RunAsync(IEnumerable<string> args, string? workingDirectory = null, GitAuth? auth = null,
+            CancellationToken ct = default, bool allowInteractiveAuth = false)
+        {
+            var list = args.ToList();
+            Calls.Add(new Call(list[2], auth, allowInteractiveAuth)); // args start with -C <folder>
+            return Task.FromResult(new GitResult(0, string.Empty, string.Empty));
+        }
+
+        public Task<List<string>?> GetSparseCheckoutPathsAsync(string localRepoPath) => throw new NotSupportedException();
+        public Task<List<Branch>> ListRemoteBranchesAsync(string repoUrl, GitAuth? auth, CancellationToken ct = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FakeDialogs : IDialogService

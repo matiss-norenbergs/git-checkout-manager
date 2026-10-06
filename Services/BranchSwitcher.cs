@@ -81,7 +81,7 @@ namespace GitCheckoutManager.Services
                 return SwitchResult.From(fetch, probe.ExitCode == 2 ? SwitchOutcome.BranchNotOnRemote : SwitchOutcome.None);
             }
 
-            // A blobless checkout downloads blobs from origin, so it needs the same URL-scoped auth as the fetch.
+            // A blobless checkout (and the fast-forward after it) downloads blobs from origin, so it needs the same URL-scoped auth as the fetch.
             var checkoutAuth = interactiveCheckout ? auth : null;
 
             var local = await git.RunAsync(
@@ -100,7 +100,7 @@ namespace GitCheckoutManager.Services
             if (checkout.ExitCode != 0) return SwitchResult.From(checkout);
 
             var merge = await git.RunAsync(
-                new[] { "-C", folder, "merge", "--ff-only", $"origin/{branch}" }, null, null, ct);
+                new[] { "-C", folder, "merge", "--ff-only", $"origin/{branch}" }, null, checkoutAuth, ct, interactiveCheckout);
             if (merge.ExitCode == 0) return new SwitchResult(0, string.Empty, string.Empty);
 
             // Only a branch with commits of its own is "left as is"; any other merge failure is a real error.

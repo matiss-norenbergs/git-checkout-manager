@@ -1475,7 +1475,7 @@ namespace GitCheckoutManager.ViewModels
                     IsLoading = true;
                     // Re-read what is really on disk and rebuild the tree and baseline from the new HEAD.
                     await OpenCheckoutAsync(root);
-                    message += await DescribeAfterSwitchAsync(root);
+                    message += await DescribeAfterSwitchAsync(root, result.SubmodulesBefore);
                 }
             }
             catch (Exception ex)
@@ -1499,12 +1499,12 @@ namespace GitCheckoutManager.ViewModels
         }
 
         /// <summary>Appends missing selected folders and the submodule hint to the result message; offers the Submodules window.</summary>
-        private async Task<string> DescribeAfterSwitchAsync(string root)
+        private async Task<string> DescribeAfterSwitchAsync(string root, IReadOnlyList<SubmoduleInfo>? submodulesBefore)
         {
             var info = CheckoutInfo;
             if (info == null || _switchFlow == null) return string.Empty;
 
-            var report = await _switchFlow.InspectAsync(root, info.SparsePaths);
+            var report = await _switchFlow.InspectAsync(root, info.SparsePaths, submodulesBefore);
             var extra = string.Empty;
 
             if (report.MissingFolders.Count > 0)

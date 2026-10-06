@@ -17,7 +17,9 @@ namespace GitCheckoutManager.Services
     }
 
     /// <param name="Attempted">True once the checkout may have changed something, so the caller must re-read the checkout.</param>
-    public sealed record BranchSwitchResult(BranchSwitchStatus Status, string Message, string? Branch = null, bool Attempted = false);
+    /// <param name="SubmodulesBefore">The submodule list read just before the switch (null when it couldn't be read); <see cref="BranchSwitchFlow.InspectAsync"/> compares against it.</param>
+    public sealed record BranchSwitchResult(BranchSwitchStatus Status, string Message, string? Branch = null, bool Attempted = false,
+        IReadOnlyList<SubmoduleInfo>? SubmodulesBefore = null);
 
     /// <summary>What the caller supplies for one switch run; everything UI-specific comes in as a delegate.</summary>
     public sealed class BranchSwitchRequest
@@ -147,6 +149,12 @@ namespace GitCheckoutManager.Services
             }
 
             // 5. Switch. Cancel only reaches the fetch; once checkout starts it finishes.
+            // Snapshot first, so the report only mentions submodules the switch itself affected.
+            IReadOnlyList<SubmoduleInfo>? before = null;
+            try { before = await _submodules.ListAsync(req.Root, fetchCt); }
+            catch (OperationCanceledException) { return new BranchSwitchResult(BranchSwitchStatus.Cancelled, "Branch switch cancelled."); }
+            catch { /* unknown: the report then says nothing about submodules */ }
+
             req.SetStatus($"Switching to {branch}…");
             SwitchResult result;
             try
@@ -159,7 +167,7 @@ namespace GitCheckoutManager.Services
             }
             catch (Exception ex)
             {
-                return new BranchSwitchResult(BranchSwitchStatus.Failed, $"Could not switch to {branch}: {ex.Message}", branch, Attempted: true);
+                return new BranchSwitchResult(BranchSwitchStatus.Failed, $"Could not switch to {branch}: {ex.Message}", branch, Attempted: true, SubmodulesBefore: before);
             }
 
             if (result.ExitCode != 0)
@@ -167,21 +175,24 @@ namespace GitCheckoutManager.Services
                 var message = result.Outcome == SwitchOutcome.BranchNotOnRemote
                     ? $"Branch {branch} does not exist on origin."
                     : $"Could not switch to {branch}: {GitText(result)}";
-                return new BranchSwitchResult(BranchSwitchStatus.Failed, message, branch, Attempted: true);
+                return new BranchSwitchResult(BranchSwitchStatus.Failed, message, branch, Attempted: true, SubmodulesBefore: before);
             }
 
             return new BranchSwitchResult(BranchSwitchStatus.Switched,
                 result.Outcome == SwitchOutcome.LeftAsIs
                     ? $"Switched to {branch} (local branch has its own commits, not fast-forwarded)."
                     : $"Switched to {branch}.",
-                branch, Attempted: true);
+                branch, Attempted: true, SubmodulesBefore: before);
         }
 
         /// <summary>
         /// Compares the (re-read) checkout with what the user had selected: selected folders the new branch lacks,
-        /// and submodules that are now on another commit than recorded or not initialized. Read-only.
+        /// and submodules the switch put on another commit than recorded or left not initialized. Only rows whose
+        /// state or recorded commit changed since <paramref name="before"/> count, so submodules that were already
+        /// uninitialized are not reported; with no snapshot (null) none are. Read-only.
         /// </summary>
-        public async Task<AfterSwitchReport> InspectAsync(string root, IEnumerable<string> sparsePaths, CancellationToken ct = default)
+        public async Task<AfterSwitchReport> InspectAsync(string root, IEnumerable<string> sparsePaths,
+            IReadOnlyList<SubmoduleInfo>? before, CancellationToken ct = default)
         {
             var tree = await _checkout.GetTreeAsync(root, ct);
             var folders = tree.Where(n => n.IsFolder).Select(n => n.Path).ToHashSet(StringComparer.Ordinal);
@@ -190,8 +201,17 @@ namespace GitCheckoutManager.Services
                 .Where(p => p.Length > 0 && !folders.Contains(p))
                 .ToList();
 
-            var subs = await _submodules.ListAsync(root, ct);
-            var attention = subs.Count(s => s.State is SubmoduleState.DifferentCommit or SubmoduleState.NotInitialized);
+            var attention = 0;
+            if (before != null)
+            {
+                var was = before.ToDictionary(s => s.DisplayPath, StringComparer.Ordinal);
+                var subs = await _submodules.ListAsync(root, ct);
+                attention = subs.Count(s =>
+                    s.State is SubmoduleState.DifferentCommit or SubmoduleState.NotInitialized &&
+                    (!was.TryGetValue(s.DisplayPath, out var old) ||
+                     old.State != s.State ||
+                     !string.Equals(old.PinnedSha, s.PinnedSha, StringComparison.OrdinalIgnoreCase)));
+            }
 
             return new AfterSwitchReport(missing, attention);
         }
