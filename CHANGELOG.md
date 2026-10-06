@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-10-06
+
 ### Added
 - Manage tab: switch the open checkout to another branch from the branch name in the status line. It checks for pending folder changes, local changes and an unreferenced detached HEAD first, and works in single-branch clones (#25).
 - Manage tab: a read-only "Local changes" window, opened from the "N local changes" count, lists changed files grouped as Conflicted, Staged, Modified, Deleted, Renamed and Untracked (#24).
@@ -117,7 +119,8 @@ First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 - Submodule management window, presets, themes and settings.
 - Windows installer with self-updates (Velopack).
 
-[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.4.2...v2.5.0
 [2.4.2]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.4.1...v2.4.2
