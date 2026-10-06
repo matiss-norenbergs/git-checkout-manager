@@ -397,6 +397,8 @@ Releases are built by the `Release` workflow, which packs the app with Velopack 
 
 The workflow fails early if the version isn't `MAJOR.MINOR.PATCH`, or (for manual runs) if the tag already exists.
 
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ---
 
 ## Where data is stored
