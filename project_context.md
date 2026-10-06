@@ -21,6 +21,7 @@ Two tabs:
 - Git CLI is called through **one runner**, `IGitService.RunAsync`
 - **Velopack** handles installs and updates. The `Velopack` package version in `GitCheckoutManager.csproj` and the `vpk` tool version in `.github/workflows/release.yml` (`dotnet tool install -g vpk --version …`) must be bumped together. The csproj `<Version>` is overridden from the tag by the release workflow.
 - No third-party UI frameworks. DI is manual in `MainWindow.xaml.cs`.
+- **Changelog:** every PR with a user-facing change adds a line under `## [Unreleased]` in `CHANGELOG.md`. At release, `[Unreleased]` is renamed to the version and date, a new empty `[Unreleased]` is added, and the compare links at the bottom are updated.
 
 ---
 
