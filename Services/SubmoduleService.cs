@@ -198,21 +198,8 @@ namespace GitCheckoutManager.Services
             Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
         {
             var folder = FolderOf(sub);
-            var result = await _gitService.RunAsync(
-                new[] { "-C", folder, "ls-remote", "--heads", "origin" }, null,
-                await AuthForOriginAsync(folder, resolveAuth, ct), ct, allowInteractiveAuth: true);
-
-            if (result.ExitCode != 0)
-                throw new InvalidOperationException(FirstLine(result.StdErr) ?? "git ls-remote failed.");
-
-            const string prefix = "refs/heads/";
-            return result.StdOut
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(l => l.Trim().Split('\t'))
-                .Where(parts => parts.Length == 2 && parts[1].StartsWith(prefix, StringComparison.Ordinal))
-                .Select(parts => parts[1][prefix.Length..])
-                .OrderBy(b => b, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            return await BranchSwitcher.ListRemoteBranchesAsync(
+                _gitService, folder, await AuthForOriginAsync(folder, resolveAuth, ct), ct);
         }
 
         /// <summary>Credentials scoped to the submodule's own origin URL, so they never reach another server.</summary>
@@ -237,23 +224,8 @@ namespace GitCheckoutManager.Services
                 .Where(l => l.Length > 0)
                 .ToList();
 
-            var unreferenced = false;
-            var symbolic = await _gitService.RunAsync(
-                new[] { "-C", folder, "symbolic-ref", "--short", "-q", "HEAD" }, null, null, ct);
-            var detached = symbolic.ExitCode != 0;
-
-            if (detached && !string.Equals(sub.CurrentSha, sub.PinnedSha, StringComparison.OrdinalIgnoreCase))
-            {
-                // A detached HEAD lists itself as "(HEAD detached at …)"; only real refs count.
-                var contains = await _gitService.RunAsync(
-                    new[] { "-C", folder, "branch", "-a", "--contains", "HEAD", "--format=%(refname)" }, null, null, ct);
-                if (contains.ExitCode != 0)
-                    throw new InvalidOperationException(FirstLine(contains.StdErr) ?? "git branch failed.");
-
-                unreferenced = !contains.StdOut
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Any(l => l.Trim().StartsWith("refs/", StringComparison.Ordinal));
-            }
+            var unreferenced = !string.Equals(sub.CurrentSha, sub.PinnedSha, StringComparison.OrdinalIgnoreCase) &&
+                               await BranchSwitcher.IsDetachedOnUnreferencedCommitAsync(_gitService, folder, ct);
 
             return new SwitchCheck(dirty, unreferenced);
         }
@@ -261,50 +233,9 @@ namespace GitCheckoutManager.Services
         public async Task<SwitchResult> SwitchBranchAsync(SubmoduleInfo sub, string branch,
             Func<string, GitAuth?> resolveAuth, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(branch) || branch.StartsWith('-'))
-                return new SwitchResult(1, string.Empty, $"'{branch}' is not a valid branch name.");
-
             var folder = FolderOf(sub);
-
             var auth = await AuthForOriginAsync(folder, resolveAuth, ct);
-
-            // An explicit refspec makes sure origin/<branch> exists even in a single-branch clone.
-            var fetch = await _gitService.RunAsync(
-                new[] { "-C", folder, "fetch", "origin", $"+refs/heads/{branch}:refs/remotes/origin/{branch}" }, null,
-                auth, ct, allowInteractiveAuth: true);
-            if (fetch.ExitCode != 0)
-            {
-                // Exit code 2 of ls-remote --exit-code = the remote answered and has no such branch.
-                var probe = await _gitService.RunAsync(
-                    new[] { "-C", folder, "ls-remote", "--exit-code", "--heads", "origin", $"refs/heads/{branch}" }, null,
-                    auth, ct, allowInteractiveAuth: false);
-                return SwitchResult.From(fetch, probe.ExitCode == 2 ? SwitchOutcome.BranchNotOnRemote : SwitchOutcome.None);
-            }
-
-            var local = await _gitService.RunAsync(
-                new[] { "-C", folder, "rev-parse", "--verify", "-q", $"refs/heads/{branch}" }, null, null, ct);
-
-            if (local.ExitCode != 0)
-            {
-                var create = await _gitService.RunAsync(
-                    new[] { "-C", folder, "checkout", "-b", branch, "--track", $"origin/{branch}" }, null, null, ct);
-                return create.ExitCode == 0 ? new SwitchResult(0, string.Empty, string.Empty) : SwitchResult.From(create);
-            }
-
-            var checkout = await _gitService.RunAsync(new[] { "-C", folder, "checkout", branch, "--" }, null, null, ct);
-            if (checkout.ExitCode != 0) return SwitchResult.From(checkout);
-
-            var merge = await _gitService.RunAsync(
-                new[] { "-C", folder, "merge", "--ff-only", $"origin/{branch}" }, null, null, ct);
-            if (merge.ExitCode == 0) return new SwitchResult(0, string.Empty, string.Empty);
-
-            // Only a branch with commits of its own is "left as is"; any other merge failure is a real error.
-            var behind = await _gitService.RunAsync(
-                new[] { "-C", folder, "merge-base", "--is-ancestor", "HEAD", $"origin/{branch}" }, null, null, ct);
-            return behind.ExitCode == 1
-                ? new SwitchResult(0, $"Local branch {branch} has commits that aren't on origin — left as is.", string.Empty,
-                    SwitchOutcome.LeftAsIs)
-                : SwitchResult.From(merge);
+            return await BranchSwitcher.SwitchAsync(_gitService, folder, branch, auth, ct, ct);
         }
 
         public async Task<GitResult> ResetToRecordedAsync(SubmoduleInfo sub, CancellationToken ct = default)

@@ -135,7 +135,24 @@ Successful checkouts are added to the **recent checkouts** list in the Manage ta
 - The most recent checkout opens automatically when you switch to this tab.
 - Checkouts that no longer exist on disk are shown greyed out with **(missing)**. Selecting one offers to remove it from the list.
 
-The line under the dropdown summarizes the checkout: remote URL, branch, commit, number of selected folders, and local changes. **Reload** re-reads everything from Git.
+The line under the dropdown summarizes the checkout: remote URL, branch (*on main*, or *detached at <commit>*), commit, number of selected folders, and local changes. **Reload** re-reads everything from Git. The branch name is a link that starts [switching the branch](#switching-the-branch-of-the-checkout).
+
+### Switching the branch of the checkout
+
+Click the branch in the summary line (*on main*, or *detached at …*) to switch the checkout to another branch. The link is disabled while something else is running. Before anything happens, the app checks, in this order:
+
+1. **Folder changes you haven't applied.** You can **Apply** them (the switch then stops, so start it again), **Discard** them (the tick marks go back to what's on disk) or **Cancel**.
+2. **Local changes.** Staged, modified, deleted, renamed or conflicted files block the switch: *"You have N local changes. Commit or discard them first."* with a button that opens the [Local changes](#local-changes) window. Untracked files and changed submodules don't block; the confirmation mentions them and they stay as they are.
+3. **A detached commit that no branch contains.** You must confirm explicitly: after the switch that commit would only be reachable through the reflog.
+
+Then pick the branch from the searchable list (read from `origin` with your saved token for that server; Git Credential Manager may ask you to sign in for other servers). The app fetches just that branch, then:
+
+- no local branch of that name: it creates one that tracks `origin/<branch>`;
+- a local branch exists: it checks it out and fast-forwards it to `origin/<branch>`. If the local branch has commits of its own, it is checked out but **left as it is**, and the message says so.
+
+The app never discards commits and never commits anything. If Git refuses the checkout (for example an untracked file would be overwritten by a file of the new branch), you see Git's message and nothing is lost. **Cancel** works while the branch is being fetched; once the checkout has started it runs to the end. In a partial (blobless) clone the checkout downloads the files of the new branch inside your selected folders.
+
+Afterwards the app re-reads the checkout and rebuilds the tree from the new branch. Your folder selection is kept. It reports what happened (*Switched to feature.*), lists selected folders that don't exist on the new branch (they stay in the sparse list, which is harmless), and, if submodules are now on a different commit than the new branch records or aren't initialized, says how many and offers **Open Submodules…**. Submodules are never updated automatically.
 
 ### Local changes
 

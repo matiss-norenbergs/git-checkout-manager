@@ -335,8 +335,14 @@
                     </Button>
                 </Grid>
 
-                <!-- Summary line; "N local changes" opens the read-only Local changes window (plain text at 0). -->
+                <!-- Summary line; the branch starts the switch flow, "N local changes" opens the read-only Local changes window (plain text at 0). -->
                 <WrapPanel Margin="0,6,0,0" ToolTip="{Binding CheckoutSummary}">
+                    <TextBlock Text="{Binding CheckoutSummaryHead}" FontSize="11.5"
+                               Foreground="{DynamicResource MutedTextBrush}"/>
+                    <Button Content="{Binding BranchLinkText}" FontSize="11.5"
+                            Style="{StaticResource LinkButton}"
+                            Command="{Binding SwitchBranchCommand}"
+                            ToolTip="Switch this checkout to another branch"/>
                     <TextBlock Text="{Binding CheckoutSummaryBefore}" FontSize="11.5"
                                Foreground="{DynamicResource MutedTextBrush}"/>
                     <Button Content="{Binding LocalChangesText}" FontSize="11.5"
@@ -874,6 +880,10 @@
                                Foreground="{DynamicResource MutedTextBrush}"
                                TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"
                                HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    <Button Content="Cancel" Margin="0,12,0,0" Padding="14,4" HorizontalAlignment="Center"
+                            Command="{Binding CancelSwitchCommand}"
+                            Visibility="{Binding IsSwitchCancellable, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Stop fetching the branch. Not available once checkout has started."/>
                 </StackPanel>
             </Grid>
         </Grid>

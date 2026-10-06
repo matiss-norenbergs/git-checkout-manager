@@ -63,6 +63,16 @@ namespace GitCheckoutManager.Services
         private Task<GitResult> RunStatusAsync(string root, CancellationToken ct) =>
             RunAsync(root, ct, "status", "--porcelain=v2", "-z", "--untracked-files=all");
 
+        public Task<List<string>> ListRemoteBranchesAsync(string root, GitAuth? auth, CancellationToken ct = default) =>
+            BranchSwitcher.ListRemoteBranchesAsync(_gitService, root, auth, ct);
+
+        public Task<bool> IsDetachedOnUnreferencedCommitAsync(string root, CancellationToken ct = default) =>
+            BranchSwitcher.IsDetachedOnUnreferencedCommitAsync(_gitService, root, ct);
+
+        public Task<SwitchResult> SwitchBranchAsync(string root, string branch, GitAuth? auth, CancellationToken fetchCt = default, Action? fetchFinished = null) =>
+            // Fetch and checkout are user-triggered (a blobless checkout downloads blobs), hence interactive auth.
+            BranchSwitcher.SwitchAsync(_gitService, root, branch, auth, fetchCt, CancellationToken.None, interactiveCheckout: true, fetchFinished);
+
         public async Task<List<TreeNode>> GetTreeAsync(string root, CancellationToken ct = default)
         {
             // Reading tree objects is purely local, even in a blobless clone: a blobless clone still

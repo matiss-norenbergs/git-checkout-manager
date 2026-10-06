@@ -30,6 +30,36 @@ namespace GitCheckoutManager.Views
             };
         }
 
-        private void PrimaryButton_Click(object sender, RoutedEventArgs e) => DialogResult = true;
+        /// <summary>Which button closed a three-way dialog (<see cref="ThreeWayChoice.Cancel"/> for Cancel/Esc/close).</summary>
+        public Services.ThreeWayChoice Choice { get; private set; } = Services.ThreeWayChoice.Cancel;
+
+        private bool _threeWay;
+
+        /// <summary>Turns the dialog into "primary / secondary / Cancel".</summary>
+        public void UseThreeWay(string primary, string? secondary)
+        {
+            _threeWay = true;
+            PrimaryButton.Content = primary;
+            if (secondary != null)
+            {
+                MiddleButton.Content = secondary;
+                MiddleButton.Style = (Style)FindResource("ActionButton");
+                MiddleButton.Visibility = Visibility.Visible;
+            }
+            SecondaryButton.Content = "Cancel";
+            SecondaryButton.Visibility = Visibility.Visible;
+        }
+
+        private void PrimaryButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_threeWay) Choice = Services.ThreeWayChoice.Primary;
+            DialogResult = true;
+        }
+
+        private void MiddleButton_Click(object sender, RoutedEventArgs e)
+        {
+            Choice = Services.ThreeWayChoice.Secondary;
+            DialogResult = true;
+        }
     }
 }
