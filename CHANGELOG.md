@@ -5,21 +5,18 @@ All notable changes to this project are documented in this file. The format is b
 ## [Unreleased]
 
 ### Added
-- Manage tab: switch the open checkout to another branch from the branch name in the status line. It checks for pending folder changes, local changes and an unreferenced detached HEAD first, and works in single-branch clones (#25)
-- Manage tab: a read-only "Local changes" window, opened from the "N local changes" count, lists changed files grouped as Conflicted, Staged, Modified, Deleted, Renamed and Untracked (#24)
-- Manage tab: open the checkout or a folder in Explorer or VS Code from the tree context menu, the checkout bar and Submodules row actions (#23)
-
-### Changed
-- Manage tab: the two open buttons in the checkout bar are now a single "Open" dropdown.
+- Manage tab: switch the open checkout to another branch from the branch name in the status line. It checks for pending folder changes, local changes and an unreferenced detached HEAD first, and works in single-branch clones (#25).
+- Manage tab: a read-only "Local changes" window, opened from the "N local changes" count, lists changed files grouped as Conflicted, Staged, Modified, Deleted, Renamed and Untracked (#24).
+- Manage tab: open the checkout or a folder in Explorer or VS Code from the "Open" menu in the checkout bar, the tree context menu and Submodules row actions (#23).
 
 ## [2.6.0] - 2026-10-05
 
 ### Added
-- The app checks for updates every 6 hours while it is open, and "Check for updates" in Settings reports correctly when a check is already running (#18)
+- The app checks for updates every 6 hours while it is open, and "Check for updates" in Settings reports correctly when a check is already running (#18).
 
 ### Fixed
-- Folder tree: clicking a partly selected folder now selects the whole folder; the partial state can no longer be set by hand (#17)
-- Disabled menu items now look disabled and no longer highlight on hover; the Submodules selection menu explains why an item is unavailable (#16)
+- Folder tree: clicking a partly selected folder now selects the whole folder; the partial state can no longer be set by hand (#17).
+- Disabled menu items now look disabled and no longer highlight on hover; the Submodules selection menu explains why an item is unavailable (#16).
 
 ## [2.5.0] - 2026-10-05
 
@@ -112,7 +109,7 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [2.0.0] - 2026-10-03
 
-First release as Git Checkout Manager (renamed from GitSparseManager).
+First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 
 ### Added
 - Sparse checkouts of part of a GitLab (including self-hosted) or GitHub repository: pick repository, branch and folders from a folder tree loaded without downloading file contents.
