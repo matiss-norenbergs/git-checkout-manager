@@ -207,7 +207,7 @@ public class SubmoduleSearchTests
 
         vm.SearchText = "alpha";
 
-        Assert.Equal("1 selected (1 hidden by search)", vm.SelectedText);
+        Assert.Equal("1 selected (1 hidden)", vm.SelectedText);
         Assert.Equal(1, vm.SelectedCount);
 
         vm.SearchText = string.Empty;

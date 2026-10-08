@@ -227,7 +227,7 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 ### Finding and selecting submodules
 
 - **Filter by path…** (at the start of the filter row; **Ctrl+F** focuses it, **Esc** clears it) narrows the list to rows whose path (relative to the checkout) or name contains the text, ignoring case. Separate several terms with commas: `lib, vendor` shows rows matching either. Nested rows match on their full path and are shown on their own. The search combines with *Show only problems* and *Show submodules outside my checkout*, shows *Showing N of M* while active, and is not saved.
-- The **header row** labels the columns. Its checkbox ticks or unticks every *shown* row that can be selected (middle state = some); ticked rows hidden by the search keep their tick, and the selection text then reads *"N selected (M hidden by search)"*.
+- The **header row** labels the columns. Its checkbox ticks or unticks every *shown* row that can be selected (middle state = some); ticked rows hidden by the search or the filters keep their tick, and the selection text then reads *"N selected (M hidden)"*.
 - Bulk actions (Pull, Switch branch, Reset selected, Initialize selected, Pull all, Select all with problems) only use shown rows, so filtering (for example `vendor/`) and then **Pull all** updates just that group.
 
 ### After cloning: the review bar

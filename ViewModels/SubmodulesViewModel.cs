@@ -480,7 +480,7 @@ namespace GitCheckoutManager.ViewModels
             get
             {
                 var hidden = HiddenSelectedCount;
-                return hidden > 0 ? $"{SelectedCount} selected ({hidden} hidden by search)" : $"{SelectedCount} selected";
+                return hidden > 0 ? $"{SelectedCount} selected ({hidden} hidden)" : $"{SelectedCount} selected";
             }
         }
 
