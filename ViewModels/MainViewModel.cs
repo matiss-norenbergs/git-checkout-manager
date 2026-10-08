@@ -168,14 +168,15 @@ namespace GitCheckoutManager.ViewModels
         [NotifyPropertyChangedFor(nameof(ShowCheckedOutEmptyHint))]
         private bool _manageShowOnlyCheckedOut;
 
-        /// <summary>The filter needs an open sparse checkout; a full checkout includes everything.</summary>
-        public bool IsCheckedOutFilterAvailable => CheckoutInfo is { IsSparse: true };
+        /// <summary>The filter needs an open cone-mode sparse checkout; a full checkout includes everything and non-cone patterns are not editable here.</summary>
+        public bool IsCheckedOutFilterAvailable =>
+            CheckedOutFilter.IsAvailable(CheckoutInfo != null, CheckoutInfo?.IsSparse == true, CheckoutInfo?.IsCone == true);
 
         /// <summary>The filter actually applies: switched on and available.</summary>
         public bool IsCheckedOutFilterActive => ManageShowOnlyCheckedOut && IsCheckedOutFilterAvailable;
 
         public string? CheckedOutFilterToolTip =>
-            CheckoutInfo is { IsSparse: false } ? "This checkout includes all files." : null;
+            CheckedOutFilter.UnavailableToolTip(CheckoutInfo != null, CheckoutInfo?.IsSparse == true, CheckoutInfo?.IsCone == true);
 
         // True when the filter left no folder visible (only root files).
         [ObservableProperty]

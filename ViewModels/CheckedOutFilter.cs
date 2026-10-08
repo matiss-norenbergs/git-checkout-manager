@@ -7,6 +7,20 @@ namespace GitCheckoutManager.ViewModels
     /// </summary>
     public static class CheckedOutFilter
     {
+        public const string FullCheckoutToolTip = "This checkout includes all files.";
+        public const string NonConeToolTip = "Only available for cone-mode sparse checkouts.";
+
+        /// <summary>The filter needs an open checkout that is sparse and in cone mode.</summary>
+        public static bool IsAvailable(bool hasCheckout, bool isSparse, bool isCone)
+            => hasCheckout && isSparse && isCone;
+
+        /// <summary>Why the checkbox is disabled, or null when there is no reason to explain (available, or nothing open).</summary>
+        public static string? UnavailableToolTip(bool hasCheckout, bool isSparse, bool isCone)
+            => !hasCheckout ? null
+             : !isSparse ? FullCheckoutToolTip
+             : !isCone ? NonConeToolTip
+             : null;
+
         /// <summary>
         /// Full re-evaluation in one pass. Off: everything is visible. On: a node is visible when it qualifies
         /// itself or has a visible descendant. A folder qualifies when it is (or sits under) a baseline folder, or is

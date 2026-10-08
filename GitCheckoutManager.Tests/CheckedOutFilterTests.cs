@@ -47,6 +47,17 @@ public class CheckedOutFilterTests
         }
     }
 
+    [Theory]
+    [InlineData(false, false, false, false, null)]
+    [InlineData(true, false, false, false, "This checkout includes all files.")]
+    [InlineData(true, true, false, false, "Only available for cone-mode sparse checkouts.")]
+    [InlineData(true, true, true, true, null)]
+    public void Availability_RequiresOpenSparseConeCheckout(bool open, bool sparse, bool cone, bool available, string? tip)
+    {
+        Assert.Equal(available, CheckedOutFilter.IsAvailable(open, sparse, cone));
+        Assert.Equal(tip, CheckedOutFilter.UnavailableToolTip(open, sparse, cone));
+    }
+
     [Fact]
     public void FilterOff_ShowsEverything()
     {
