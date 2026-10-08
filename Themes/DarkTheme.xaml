@@ -265,15 +265,10 @@
 
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{DynamicResource WindowForegroundBrush}"/>
-        <Style.Resources>
-            <!-- The label is a TextBlock, which would otherwise take the theme-wide TextBlock style and never grey out -->
-            <Style TargetType="TextBlock">
-                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=CheckBox}}"/>
-            </Style>
-        </Style.Resources>
         <Style.Triggers>
+            <!-- The label TextBlock takes the theme-wide TextBlock colour, so dim the whole control instead of recolouring it -->
             <Trigger Property="IsEnabled" Value="False">
-                <Setter Property="Foreground" Value="{DynamicResource DisabledControlForegroundBrush}"/>
+                <Setter Property="Opacity" Value="0.5"/>
             </Trigger>
         </Style.Triggers>
     </Style>

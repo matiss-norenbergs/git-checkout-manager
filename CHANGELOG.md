@@ -9,7 +9,7 @@ All notable changes to this project are documented in this file. The format is b
 - Submodules window: a "Filter by path…" search box (Ctrl+F; comma-separated terms), a column header row with a select-all checkbox for the shown rows, and a narrower URL column. The selection count mentions ticked rows hidden by the search or filters, and the redundant "Clear selection" menu item is gone (#31).
 
 ### Fixed
-- Disabled checkboxes now look disabled (greyed label).
+- Disabled checkboxes now look disabled.
 
 ## [2.7.0] - 2026-10-06
 
