@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-08
+
 ### Added
 - Manage tab: "Show only checked-out paths" filter for the folder tree (remembered between sessions) (#33).
 - Submodules window: a "Filter by path…" search box (Ctrl+F; comma-separated terms), a column header row with a select-all checkbox for the shown rows, and a narrower URL column. The selection count mentions ticked rows hidden by the search or filters, and the redundant "Clear selection" menu item is gone (#31).
@@ -126,7 +128,8 @@ First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 - Submodule management window, presets, themes and settings.
 - Windows installer with self-updates (Velopack).
 
-[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.4.2...v2.5.0
