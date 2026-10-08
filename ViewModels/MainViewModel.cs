@@ -47,6 +47,7 @@ namespace GitCheckoutManager.ViewModels
         // Manage-mode checkout state
         // Debounces live script regeneration (Clone) and pending-change recomputation (Manage).
         private readonly DispatcherTimer _regenerateTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+        private bool _reapplySearchAfterGrow;
         private List<string> _baselinePaths = new();
         private List<string> _addedPaths = new();
         private List<string> _removedPaths = new();
@@ -351,6 +352,13 @@ namespace GitCheckoutManager.ViewModels
             {
                 _regenerateTimer.Stop();
                 RegenerateScript();
+
+                // Grow-only visibility changed while editing: bring an active search in line, once per burst.
+                if (_reapplySearchAfterGrow)
+                {
+                    _reapplySearchAfterGrow = false;
+                    if (!string.IsNullOrEmpty(SearchFilter)) ApplyFilter(SearchFilter);
+                }
             };
 
             _appSettings = settingsService.LoadSettings();
@@ -982,6 +990,7 @@ namespace GitCheckoutManager.ViewModels
             if (IsManageMode && IsCheckedOutFilterActive)
             {
                 CheckedOutFilter.Grow(node);
+                _reapplySearchAfterGrow = true;
                 CheckedOutFilterEmpty = CheckedOutFilter.IsEmpty(_tabs.Manage.Roots);
             }
 
@@ -1001,6 +1010,10 @@ namespace GitCheckoutManager.ViewModels
             var roots = _tabs.Manage.Roots;
             CheckedOutFilter.Evaluate(roots, IsCheckedOutFilterActive, _baselinePaths);
             CheckedOutFilterEmpty = IsCheckedOutFilterActive && CheckedOutFilter.IsEmpty(roots);
+
+            // Search skips hidden nodes, so it has to be recomputed against the new visibility.
+            if (IsManageMode && !string.IsNullOrEmpty(SearchFilter))
+                ApplyFilter(SearchFilter);
         }
 
         private void ScheduleRegenerate()

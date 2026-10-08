@@ -222,4 +222,19 @@ public class CheckedOutFilterTests
 
         Assert.Equal(before, t.All().Select(n => n.IsChecked).ToList());
     }
+
+    [Fact]
+    public void UntickedBaselineFolder_KeepsItsDirectFilesVisible()
+    {
+        var t = new Tree();
+        t.Api.IsChecked = true;
+        t.Api.IsChecked = false;      // pending removal; its files stay on disk until apply
+
+        CheckedOutFilter.Evaluate(t.Roots, true, new[] { "apps/api" });
+
+        Assert.False(t.ApiFile.IsIncluded);
+        Assert.True(t.ApiFile.IsVisibleInFilter);
+        Assert.True(t.Api.IsVisibleInFilter);
+        Assert.False(t.WebFile.IsVisibleInFilter);
+    }
 }

@@ -233,4 +233,45 @@ public class TreeSearchTests
         Assert.Empty(TreeSearch.FindMatches(t.Roots, ""));
         Assert.Empty(TreeSearch.FindMatches(t.Roots, "zzz"));
     }
+
+    [Fact]
+    public void HiddenByCheckedOutFilter_IsNotMatchedOrCounted()
+    {
+        var t = new Tree();
+        t.Controllers.IsVisibleInFilter = false;
+
+        Assert.Empty(TreeSearch.FindMatches(t.Roots, "UserController"));
+        Assert.Empty(TreeSearch.FindMatches(t.Roots, "controllers"));
+        Assert.Equal(new[] { t.Core }, TreeSearch.FindMatches(t.Roots, "c"));
+        Assert.Equal(0, TreeSearch.Apply(t.Roots, "UserController").MatchCount);
+    }
+
+    [Fact]
+    public void FolderWhoseOnlyMatchIsHidden_IsNotVisible_AndNotExpanded()
+    {
+        var t = new Tree();
+        t.Controllers.IsVisibleInFilter = false;
+
+        TreeSearch.Apply(t.Roots, "UserController");
+
+        Assert.False(t.Controllers.IsVisible);
+        Assert.False(t.Api.IsVisible);
+        Assert.False(t.Apps.IsVisible);
+        Assert.False(t.Apps.IsExpanded);
+        Assert.False(t.Api.IsExpanded);
+    }
+
+    [Fact]
+    public void MatchingFolder_KeepsOnlyItsFilterVisibleSubtree()
+    {
+        var t = new Tree();
+        t.Web.IsVisibleInFilter = false;
+
+        var result = TreeSearch.Apply(t.Roots, "apps");
+
+        Assert.Equal(1, result.MatchCount);
+        Assert.True(t.Apps.IsVisible);
+        Assert.True(t.Api.IsVisible);
+        Assert.False(t.Web.IsVisible);
+    }
 }

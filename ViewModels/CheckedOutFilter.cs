@@ -24,7 +24,7 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>
         /// Full re-evaluation in one pass. Off: everything is visible. On: a node is visible when it qualifies
         /// itself or has a visible descendant. A folder qualifies when it is (or sits under) a baseline folder, or is
-        /// ticked or partial; a file qualifies when it is included (cone-mode rule).
+        /// ticked or partial; a file qualifies when it is included (cone-mode rule) or its folder is in or under the baseline.
         /// </summary>
         public static void Evaluate(IEnumerable<TreeNodeViewModel> roots, bool enabled, IEnumerable<string> baselinePaths)
         {
@@ -67,7 +67,8 @@ namespace GitCheckoutManager.ViewModels
         private static bool Visit(TreeNodeViewModel node, HashSet<string> baseline, bool underBaseline)
         {
             var inBaseline = underBaseline || (node.IsFolder && baseline.Contains(node.FullPath));
-            var visible = node.IsFolder ? inBaseline || node.IsChecked != false : node.IsIncluded;
+            // A file also stays while its folder is in or under the baseline: after an untick it is still on disk until apply.
+            var visible = node.IsFolder ? inBaseline || node.IsChecked != false : node.IsIncluded || underBaseline;
 
             // No short-circuit: every descendant needs its own value.
             foreach (var child in node.Children)
