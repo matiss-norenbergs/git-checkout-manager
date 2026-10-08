@@ -40,6 +40,9 @@ namespace GitCheckoutManager.Models
         /// <summary>Submodules window: list only submodules that need attention.</summary>
         public bool SubmodulesShowOnlyProblems { get; set; } = false;
 
+        /// <summary>Manage tab: show only the folders and files that are part of the sparse checkout.</summary>
+        public bool ManageShowOnlyCheckedOut { get; set; } = false;
+
         /// <summary>Clone tab: sparse checkout of selected folders, or a full clone.</summary>
         public CloneMode CloneMode { get; set; } = CloneMode.Sparse;
 

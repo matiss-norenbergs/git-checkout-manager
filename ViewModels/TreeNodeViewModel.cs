@@ -14,6 +14,9 @@ namespace GitCheckoutManager.ViewModels
         [ObservableProperty] private bool _isVisible = true;
         [ObservableProperty] private bool _isSelected;
 
+        /// <summary>Manage tab "Show only checked-out paths" filter; combined (AND) with <see cref="IsVisible"/> (search) in the view.</summary>
+        [ObservableProperty] private bool _isVisibleInFilter = true;
+
         /// <summary>Manage tab only: whether the folder exists on disk. Set when the context menu opens, not when the tree loads.</summary>
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(OnDiskToolTip))]
@@ -51,10 +54,10 @@ namespace GitCheckoutManager.ViewModels
         // ── Three-state checkbox logic ────────────────────────────────────────
 
         /// <summary>
-        /// Raised once per user-driven checkbox change (not for the cascade onto children/parents),
+        /// Raised once per user-driven checkbox change (not for the cascade onto children/parents), with the node that changed,
         /// so the owning view model can recompute derived state without walking the tree on every node.
         /// </summary>
-        public static event Action? CheckedChanged;
+        public static event Action<TreeNodeViewModel>? CheckedChanged;
 
         partial void OnIsCheckedChanged(bool? value)
         {
@@ -74,7 +77,7 @@ namespace GitCheckoutManager.ViewModels
 
             _parent?.RefreshCheckedFromChildren();
 
-            CheckedChanged?.Invoke();
+            CheckedChanged?.Invoke(this);
         }
 
         private void NotifyFileChildrenIncludedChanged()
