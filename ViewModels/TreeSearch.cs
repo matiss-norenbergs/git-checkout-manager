@@ -7,7 +7,8 @@ namespace GitCheckoutManager.ViewModels
 
     /// <summary>
     /// UI-free search logic for the checkout tree: matching, visibility, ancestor auto-expansion and
-    /// expansion snapshot/restore. Never touches checked state.
+    /// expansion snapshot/restore. Never touches checked state. Nodes hidden by the checked-out filter
+    /// (<see cref="TreeNodeViewModel.IsVisibleInFilter"/> false) are treated as absent: never matched, counted or expanded to.
     /// </summary>
     public static class TreeSearch
     {
@@ -101,6 +102,9 @@ namespace GitCheckoutManager.ViewModels
         {
             foreach (var node in nodes)
             {
+                // Hidden by the checked-out filter: treated as absent, subtree included.
+                if (!node.IsVisibleInFilter) continue;
+
                 if (Matches(node, filter)) matches.Add(node);
                 Collect(node.Children, filter, matches);
             }
@@ -141,6 +145,13 @@ namespace GitCheckoutManager.ViewModels
 
         private static bool Visit(TreeNodeViewModel node, string filter, bool ancestorMatched, List<TreeNodeViewModel> matches)
         {
+            if (!node.IsVisibleInFilter)
+            {
+                node.IsVisible = false;
+                node.SetHighlight(null);
+                return false;
+            }
+
             var matched = MatchRange(node, filter) != null;
             if (matched) matches.Add(node);
             node.SetHighlight(FindNameHighlight(node, filter));

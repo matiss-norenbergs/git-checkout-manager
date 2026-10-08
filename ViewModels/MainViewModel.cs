@@ -47,6 +47,7 @@ namespace GitCheckoutManager.ViewModels
         // Manage-mode checkout state
         // Debounces live script regeneration (Clone) and pending-change recomputation (Manage).
         private readonly DispatcherTimer _regenerateTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+        private bool _reapplySearchAfterGrow;
         private List<string> _baselinePaths = new();
         private List<string> _addedPaths = new();
         private List<string> _removedPaths = new();
@@ -156,7 +157,34 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(OpenCheckoutInVsCodeCommand))]
         [NotifyCanExecuteChangedFor(nameof(SwitchBranchCommand))]
         [NotifyPropertyChangedFor(nameof(HasOpenCheckout))]
+        [NotifyPropertyChangedFor(nameof(IsCheckedOutFilterAvailable))]
+        [NotifyPropertyChangedFor(nameof(IsCheckedOutFilterActive))]
+        [NotifyPropertyChangedFor(nameof(CheckedOutFilterToolTip))]
+        [NotifyPropertyChangedFor(nameof(ShowCheckedOutEmptyHint))]
         private CheckoutInfo? _checkoutInfo;
+
+        /// <summary>Manage tab: "Show only checked-out paths". Saved on toggle; stays as the user set it while unavailable.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsCheckedOutFilterActive))]
+        [NotifyPropertyChangedFor(nameof(ShowCheckedOutEmptyHint))]
+        private bool _manageShowOnlyCheckedOut;
+
+        /// <summary>The filter needs an open cone-mode sparse checkout; a full checkout includes everything and non-cone patterns are not editable here.</summary>
+        public bool IsCheckedOutFilterAvailable =>
+            CheckedOutFilter.IsAvailable(CheckoutInfo != null, CheckoutInfo?.IsSparse == true, CheckoutInfo?.IsCone == true);
+
+        /// <summary>The filter actually applies: switched on and available.</summary>
+        public bool IsCheckedOutFilterActive => ManageShowOnlyCheckedOut && IsCheckedOutFilterAvailable;
+
+        public string? CheckedOutFilterToolTip =>
+            CheckedOutFilter.UnavailableToolTip(CheckoutInfo != null, CheckoutInfo?.IsSparse == true, CheckoutInfo?.IsCone == true);
+
+        // True when the filter left no folder visible (only root files).
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ShowCheckedOutEmptyHint))]
+        private bool _checkedOutFilterEmpty;
+
+        public bool ShowCheckedOutEmptyHint => IsManageMode && IsCheckedOutFilterActive && CheckedOutFilterEmpty;
 
         /// <summary>Enables the checkout bar's "Open" menu.</summary>
         public bool HasOpenCheckout => CheckoutInfo != null;
@@ -203,6 +231,7 @@ namespace GitCheckoutManager.ViewModels
         [NotifyPropertyChangedFor(nameof(IsOperationEnabled))]
         [NotifyPropertyChangedFor(nameof(IsFullClone))]
         [NotifyPropertyChangedFor(nameof(IsTreeSelectionEnabled))]
+        [NotifyPropertyChangedFor(nameof(ShowCheckedOutEmptyHint))]
         private AppMode _activeMode = AppMode.Clone;
 
         // ── Clone mode (sparse vs full) ───────────────────────────────────────
@@ -323,6 +352,13 @@ namespace GitCheckoutManager.ViewModels
             {
                 _regenerateTimer.Stop();
                 RegenerateScript();
+
+                // Grow-only visibility changed while editing: bring an active search in line, once per burst.
+                if (_reapplySearchAfterGrow)
+                {
+                    _reapplySearchAfterGrow = false;
+                    if (!string.IsNullOrEmpty(SearchFilter)) ApplyFilter(SearchFilter);
+                }
             };
 
             _appSettings = settingsService.LoadSettings();
@@ -332,6 +368,7 @@ namespace GitCheckoutManager.ViewModels
             InitSubmodules = _appSettings.InitSubmodules;
             KeepWindowOpen = _appSettings.KeepWindowOpen;
             SelectedThemeMode = _appSettings.ThemeMode;
+            _manageShowOnlyCheckedOut = _appSettings.ManageShowOnlyCheckedOut;
 
             _suppressHostSync = true;
             SelectedHostType = _appSettings.HostType;
@@ -345,7 +382,7 @@ namespace GitCheckoutManager.ViewModels
             RefreshRecentCheckoutState();
 
             // Ticking a large folder changes thousands of nodes; collapse that into one regeneration.
-            TreeNodeViewModel.CheckedChanged += ScheduleRegenerate;
+            TreeNodeViewModel.CheckedChanged += OnTreeNodeCheckedChanged;
             UpdateDestination();
             RegenerateScript();
         }
@@ -947,6 +984,38 @@ namespace GitCheckoutManager.ViewModels
 
         // ── Live script ───────────────────────────────────────────────────────
 
+        private void OnTreeNodeCheckedChanged(TreeNodeViewModel node)
+        {
+            // Visibility only grows while editing; the next full re-evaluation does the hiding.
+            if (IsManageMode && IsCheckedOutFilterActive)
+            {
+                CheckedOutFilter.Grow(node);
+                _reapplySearchAfterGrow = true;
+                CheckedOutFilterEmpty = CheckedOutFilter.IsEmpty(_tabs.Manage.Roots);
+            }
+
+            ScheduleRegenerate();
+        }
+
+        partial void OnManageShowOnlyCheckedOutChanged(bool value)
+        {
+            _appSettings.ManageShowOnlyCheckedOut = value;
+            _settingsService.SaveSettings(_appSettings);
+            ReevaluateCheckedOutFilter();
+        }
+
+        /// <summary>Full re-evaluation of the Manage tree: on toggle and after every tree rebuild.</summary>
+        private void ReevaluateCheckedOutFilter()
+        {
+            var roots = _tabs.Manage.Roots;
+            CheckedOutFilter.Evaluate(roots, IsCheckedOutFilterActive, _baselinePaths);
+            CheckedOutFilterEmpty = IsCheckedOutFilterActive && CheckedOutFilter.IsEmpty(roots);
+
+            // Search skips hidden nodes, so it has to be recomputed against the new visibility.
+            if (IsManageMode && !string.IsNullOrEmpty(SearchFilter))
+                ApplyFilter(SearchFilter);
+        }
+
         private void ScheduleRegenerate()
         {
             _regenerateTimer.Stop();
@@ -1337,6 +1406,8 @@ namespace GitCheckoutManager.ViewModels
                         _checkoutSummarySuffix =
                             $" · {skippedFiles} file path(s) in the sparse list are ignored; only folders can be selected.";
                 }
+
+                ReevaluateCheckedOutFilter();
 
                 if (IsManageMode)
                 {

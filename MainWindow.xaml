@@ -11,6 +11,7 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <controls:AllTrueToVisibilityConverter x:Key="AllTrueToVis"/>
 
         <!-- Tab-strip RadioButton style -->
         <Style x:Key="TabRadioButton" TargetType="RadioButton">
@@ -54,7 +55,15 @@
         <Style x:Key="TreeItemStyle" TargetType="TreeViewItem">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-            <Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVis}}"/>
+            <!-- Search (IsVisible) AND the Manage "checked-out only" filter (IsVisibleInFilter; always true for Clone nodes). -->
+            <Setter Property="Visibility">
+                <Setter.Value>
+                    <MultiBinding Converter="{StaticResource AllTrueToVis}">
+                        <Binding Path="IsVisible"/>
+                        <Binding Path="IsVisibleInFilter"/>
+                    </MultiBinding>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Folder name bold, file name normal -->
@@ -650,6 +659,15 @@
                                Foreground="{DynamicResource MutedTextBrush}"
                                Visibility="{Binding IsFullClone, Converter={StaticResource BoolToVis}}"/>
 
+                    <CheckBox DockPanel.Dock="Top" Content="Show only checked-out paths"
+                              Margin="8,6"
+                              IsChecked="{Binding ManageShowOnlyCheckedOut}"
+                              IsEnabled="{Binding IsCheckedOutFilterAvailable}"
+                              ToolTip="{Binding CheckedOutFilterToolTip}"
+                              ToolTipService.ShowOnDisabled="True"
+                              Visibility="{Binding IsManageMode, Converter={StaticResource BoolToVis}}"/>
+
+                    <Grid>
                     <TreeView x:Name="MainTree" ItemsSource="{Binding TreeNodes}"
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
@@ -737,6 +755,13 @@
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
+                    <TextBlock Text="No folders checked out yet. Turn off the filter to choose folders."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap" Margin="12"
+                               IsHitTestVisible="False"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Visibility="{Binding ShowCheckedOutEmptyHint, Converter={StaticResource BoolToVis}}"/>
+                    </Grid>
                 </DockPanel>
 
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
