@@ -1176,7 +1176,7 @@ public class SubmoduleBranchSwitchTests
 
         Assert.Equal(new[] { "external/a", "external/b" }, vm.Rows.Where(r => r.IsSelected).Select(r => r.DisplayPath));
 
-        vm.ClearSelectionCommand.Execute(null);
+        vm.HeaderSelectAll = false;
         Assert.Equal(0, vm.SelectedCount);
     }
 

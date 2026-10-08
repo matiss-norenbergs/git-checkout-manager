@@ -284,8 +284,9 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(SwitchSelectedCommand))]
         [NotifyCanExecuteChangedFor(nameof(ResetSelectedCommand))]
         [NotifyCanExecuteChangedFor(nameof(SelectAllWithRemoteCommand))]
-        [NotifyCanExecuteChangedFor(nameof(ClearSelectionCommand))]
         private bool _isRunning;
+
+        partial void OnIsRunningChanged(bool value) => RefreshSelectionState();
 
         /// <summary>No run is active; the options, Refresh and Close are available.</summary>
         public bool IsIdle => !IsRunning;
@@ -298,6 +299,18 @@ namespace GitCheckoutManager.ViewModels
 
         [ObservableProperty] private bool _showOnlyProblems;
         [ObservableProperty] private bool _showOutsideCheckout;
+
+        /// <summary>Filter box text (not saved). Comma-separated terms; a row is shown if any matches its path or name.</summary>
+        [ObservableProperty] private string _searchText = string.Empty;
+
+        /// <summary>"Showing N of M" while a search is active, else empty.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasSearchCountText))]
+        private string _searchCountText = string.Empty;
+
+        public bool HasSearchCountText => SearchCountText.Length > 0;
+
+        partial void OnSearchTextChanged(string value) => ApplyFilter();
 
         [ObservableProperty] private string _summaryText = "Loading submodules…";
 
@@ -452,7 +465,52 @@ namespace GitCheckoutManager.ViewModels
 
         public int SelectedCount => TickedRows().Count;
         public bool HasSelection => SelectedCount > 0;
-        public string SelectedText => $"{SelectedCount} selected";
+        /// <summary>Ticked rows that a search or filter currently hides; they keep their tick but no action uses them.</summary>
+        public int HiddenSelectedCount
+        {
+            get
+            {
+                var shown = Rows.ToHashSet();
+                return _all.Count(r => r.IsSelected && r.CanSelect && !shown.Contains(r));
+            }
+        }
+
+        public string SelectedText
+        {
+            get
+            {
+                var hidden = HiddenSelectedCount;
+                return hidden > 0 ? $"{SelectedCount} selected ({hidden} hidden by search)" : $"{SelectedCount} selected";
+            }
+        }
+
+        /// <summary>Shown rows the header checkbox covers: every shown row that can be ticked.</summary>
+        private List<SubmoduleRowViewModel> HeaderRows() => Rows.Where(r => r.CanSelect).ToList();
+
+        /// <summary>
+        /// Header checkbox: unticked when none of the shown selectable rows is ticked, ticked when all are, null
+        /// (middle) otherwise. Setting true/false ticks/unticks only those rows; hidden rows keep their tick.
+        /// </summary>
+        public bool? HeaderSelectAll
+        {
+            get
+            {
+                var rows = HeaderRows();
+                var ticked = rows.Count(r => r.IsSelected);
+                return ticked == 0 ? false : ticked == rows.Count ? true : null;
+            }
+            set
+            {
+                if (value == null || !HeaderSelectAllEnabled) return;
+                foreach (var row in HeaderRows()) row.IsSelected = value.Value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool HeaderSelectAllEnabled => !IsRunning && !IsBusy && HeaderRows().Count > 0;
+
+        public string HeaderSelectAllToolTip =>
+            HeaderSelectAll == true ? "Clear selection of shown rows" : "Select all shown";
 
         public string PullButtonText
         {
@@ -520,19 +578,13 @@ namespace GitCheckoutManager.ViewModels
             SwitchSelectedCommand.NotifyCanExecuteChanged();
             ResetSelectedCommand.NotifyCanExecuteChanged();
             SelectAllWithRemoteCommand.NotifyCanExecuteChanged();
-            ClearSelectionCommand.NotifyCanExecuteChanged();
             foreach (var name in new[]
             {
                 nameof(SelectedCount), nameof(HasSelection), nameof(SelectedText), nameof(PullButtonText),
-                nameof(SwitchButtonText), nameof(InitializeButtonText), nameof(PullToolTip), nameof(SwitchToolTip)
+                nameof(SwitchButtonText), nameof(InitializeButtonText), nameof(PullToolTip), nameof(SwitchToolTip),
+                nameof(HeaderSelectAll), nameof(HeaderSelectAllEnabled), nameof(HeaderSelectAllToolTip)
             })
                 OnPropertyChanged(name);
-        }
-
-        [RelayCommand(CanExecute = nameof(CanSelectAll))]
-        private void ClearSelection()
-        {
-            foreach (var row in _all) row.IsSelected = false;
         }
 
         private bool CanSelectAllWithRemote() => !IsRunning && TickedRemote() != null;
@@ -610,7 +662,7 @@ namespace GitCheckoutManager.ViewModels
             foreach (var queued in targets) queued.IsQueued = true;
 
             // Ticked rows that are not targets (e.g. not populated during a Pull) keep their tick too.
-            var ticked = Rows.Where(r => r.IsSelected).Select(r => r.DisplayPath).ToList();
+            var ticked = _all.Where(r => r.IsSelected).Select(r => r.DisplayPath).ToList();
 
             var done = new List<(SubmoduleRowViewModel, BatchOutcome)>();
             var cancelled = false;
@@ -682,7 +734,7 @@ namespace GitCheckoutManager.ViewModels
 
                 await LoadAsync();
 
-                foreach (var row in Rows.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
+                foreach (var row in _all.Where(r => r.CanSelect && stillSelected.Contains(r.DisplayPath)))
                     row.IsSelected = true;
 
                 ResultText = buildResultText(run);
@@ -1362,18 +1414,33 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>Stops any load or run still going; called when the window closes.</summary>
         public void Cancel() => _cts.Cancel();
 
-        private bool IsVisible(SubmoduleRowViewModel row) => row.State switch
+        private bool PassesFilters(SubmoduleRowViewModel row) => row.State switch
         {
             SubmoduleState.OutsideCheckout => ShowOutsideCheckout,
             SubmoduleState.Ready => !ShowOnlyProblems,
             _ => true
         };
 
+        /// <summary>The search terms: the text split on commas, trimmed, empty parts dropped.</summary>
+        private List<string> SearchTerms() =>
+            SearchText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+        private static bool MatchesSearch(SubmoduleRowViewModel row, List<string> terms) =>
+            terms.Any(t => row.DisplayPath.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                           (row.Name?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        private bool IsVisible(SubmoduleRowViewModel row, List<string> terms) =>
+            PassesFilters(row) && (terms.Count == 0 || MatchesSearch(row, terms));
+
         private void ApplyFilter()
         {
+            var terms = SearchTerms();
             Rows.Clear();
-            foreach (var row in _all.Where(IsVisible))
+            foreach (var row in _all.Where(r => IsVisible(r, terms)))
                 Rows.Add(row);
+
+            var passing = terms.Count == 0 ? Rows.Count : _all.Count(PassesFilters);
+            SearchCountText = terms.Count == 0 ? string.Empty : $"Showing {Rows.Count} of {passing}";
 
             SummaryText = BuildSummary();
             RefreshSelectionState();
@@ -1381,6 +1448,7 @@ namespace GitCheckoutManager.ViewModels
 
             EmptyText = Rows.Count > 0 ? string.Empty
                 : _all.Count == 0 ? "This checkout has no submodules."
+                : terms.Count > 0 && passing > 0 ? $"No submodules match \"{SearchText.Trim()}\"."
                 : "Nothing to show with the current filters.";
         }
 

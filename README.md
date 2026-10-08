@@ -224,6 +224,12 @@ Click **Submodules…** in the Manage tab to see every submodule of the open che
 | **Cloned manually** (blue) | No `.gitmodules` entry, but the folder holds a repository (for example from **Clone manually…**). Git doesn't manage it as a submodule, so *Initialize* skips it; it can still be pulled and switched. |
 | **Not in your checkout** | Outside your selected folders; shown only with *Show submodules outside my checkout*. |
 
+### Finding and selecting submodules
+
+- **Filter by path…** (at the start of the filter row; **Ctrl+F** focuses it, **Esc** clears it) narrows the list to rows whose path (relative to the checkout) or name contains the text, ignoring case. Separate several terms with commas: `lib, vendor` shows rows matching either. Nested rows match on their full path and are shown on their own. The search combines with *Show only problems* and *Show submodules outside my checkout*, shows *Showing N of M* while active, and is not saved.
+- The **header row** labels the columns. Its checkbox ticks or unticks every *shown* row that can be selected (middle state = some); ticked rows hidden by the search keep their tick, and the selection text then reads *"N selected (M hidden by search)"*.
+- Bulk actions (Pull, Switch branch, Reset selected, Initialize selected, Pull all, Select all with problems) only use shown rows, so filtering (for example `vendor/`) and then **Pull all** updates just that group.
+
 ### After cloning: the review bar
 
 If you run a script from the **Clone** tab and it finishes with exit code 2 (*checkout created, but some submodules failed*), a bar appears at the top of the window: *"Some submodules need attention in <folder>."* Click **Review submodules** to switch to the Manage tab, open that checkout and show the Submodules window with *Show only problems* ticked (for this opening only; your saved preference is unchanged). **Dismiss** hides the bar; it also disappears on the next *Execute* or when you open another checkout.

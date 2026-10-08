@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
 using GitCheckoutManager.ViewModels;
 
 namespace GitCheckoutManager.Views
@@ -18,6 +19,34 @@ namespace GitCheckoutManager.Views
             Closing += (_, e) => e.Cancel = (DataContext as SubmodulesViewModel)?.IsRunning == true;
             Closed += (_, _) => (DataContext as SubmodulesViewModel)?.Cancel();
         }
+
+        /// <summary>Ctrl+F focuses the filter box.</summary>
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                e.Handled = true;
+                return;
+            }
+            base.OnPreviewKeyDown(e);
+        }
+
+        /// <summary>
+        /// Esc clears the filter when it has text. The window's Close button is IsCancel, so this must be handled
+        /// here (marked handled) or the window would close; with an empty box Esc behaves as before.
+        /// </summary>
+        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape || SearchBox.Text.Length == 0) return;
+            SearchBox.Clear();
+            e.Handled = true;
+        }
+
+        /// <summary>Keeps the header as wide as the rows: the gutter takes whatever the vertical scrollbar uses.</summary>
+        private void RowsScroll_Changed(object sender, RoutedEventArgs e) =>
+            HeaderGutter.Width = Math.Max(0, RowsScroll.ActualWidth - RowsScroll.ViewportWidth);
 
         private void ActionsButton_Click(object sender, RoutedEventArgs e)
         {

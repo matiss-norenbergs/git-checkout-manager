@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:GitCheckoutManager.Views"
         xmlns:models="clr-namespace:GitCheckoutManager.Models"
+        xmlns:controls="clr-namespace:GitCheckoutManager.Controls"
         Title="Submodules"
         Width="1400" Height="820"
         MinWidth="640" MinHeight="320"
@@ -41,6 +42,31 @@
                 </Grid.ColumnDefinitions>
 
                 <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Margin="0,2,20,2" VerticalAlignment="Center">
+                        <Grid>
+                            <TextBox x:Name="SearchBox" Width="260" Padding="5,4" VerticalAlignment="Center"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     PreviewKeyDown="SearchBox_PreviewKeyDown"
+                                     ToolTip="Matches the path or name. Separate several terms with commas. Ctrl+F focuses this box; Esc clears it."/>
+                            <TextBlock Text="Filter by path… (comma for several)" IsHitTestVisible="False"
+                                       Margin="8,0,8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource MutedTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=SearchBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <TextBlock Text="{Binding SearchCountText}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   Visibility="{Binding HasSearchCountText, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
                     <CheckBox Content="Show only problems" Margin="0,2,20,2" VerticalAlignment="Center"
                               IsChecked="{Binding ShowOnlyProblems}"/>
                     <CheckBox Content="Show submodules outside my checkout" Margin="0,2,20,2" VerticalAlignment="Center"
@@ -82,14 +108,6 @@
                                             </Trigger>
                                         </Style.Triggers>
                                     </Style>
-                                    <Style x:Key="ClearTip" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
-                                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter Property="ToolTip" Value="Nothing is ticked."/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
                                 </ContextMenu.Resources>
                                 <MenuItem Header="Reset selected to recorded commit"
                                           Style="{StaticResource ResetTip}"
@@ -97,9 +115,6 @@
                                 <MenuItem Header="Select all with this remote"
                                           Style="{StaticResource RemoteTip}"
                                           Command="{Binding PlacementTarget.Tag.SelectAllWithRemoteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                                <MenuItem Header="Clear selection"
-                                          Style="{StaticResource ClearTip}"
-                                          Command="{Binding PlacementTarget.Tag.ClearSelectionCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>
@@ -112,7 +127,51 @@
                 Background="{DynamicResource SubPanelBackgroundBrush}"
                 BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1">
             <Grid>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Column header: same columns and padding as the row template; the gutter on the right takes the
+                     vertical scrollbar's width (set from the ScrollViewer) so the labels stay aligned. -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Padding="10,6" BorderThickness="0,0,0,1"
+                            BorderBrush="{DynamicResource PanelBorderBrush}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="1*"/>
+                                <ColumnDefinition Width="36"/>
+                            </Grid.ColumnDefinitions>
+                            <controls:TreeCheckBox Grid.Column="0" VerticalAlignment="Center"
+                                                   Style="{StaticResource {x:Type CheckBox}}"
+                                                   IsChecked="{Binding HeaderSelectAll}"
+                                                   IsEnabled="{Binding HeaderSelectAllEnabled}"
+                                                   ToolTip="{Binding HeaderSelectAllToolTip}"/>
+                            <TextBlock Grid.Column="1" Text="Path" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <TextBlock Grid.Column="2" Text="State" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <TextBlock Grid.Column="3" Text="Commits" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <TextBlock Grid.Column="4" Text="URL" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                        </Grid>
+                    </Border>
+                    <Border x:Name="HeaderGutter" Grid.Column="1" Width="0"
+                            BorderThickness="0,0,0,1" BorderBrush="{DynamicResource PanelBorderBrush}"/>
+                </Grid>
+
+                <ScrollViewer x:Name="RowsScroll" Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              ScrollChanged="RowsScroll_Changed" SizeChanged="RowsScroll_Changed"
                               FocusVisualStyle="{x:Null}">
                     <ItemsControl ItemsSource="{Binding Rows}" FocusVisualStyle="{x:Null}">
                         <ItemsControl.ItemTemplate>
@@ -130,7 +189,7 @@
                                             <ColumnDefinition Width="2*"/>
                                             <ColumnDefinition Width="170"/>
                                             <ColumnDefinition Width="140"/>
-                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="1*"/>
                                             <!-- Fixed, so rows without actions keep the same width and every column lines up -->
                                             <ColumnDefinition Width="36"/>
                                         </Grid.ColumnDefinitions>
@@ -254,7 +313,7 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <TextBlock Text="{Binding EmptyText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                <TextBlock Grid.Row="1" Text="{Binding EmptyText}" HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{DynamicResource MutedTextBrush}"
                            Visibility="{Binding HasEmptyText, Converter={StaticResource BoolToVis}}"/>
             </Grid>
