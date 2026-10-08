@@ -45,7 +45,7 @@
                     <StackPanel Orientation="Horizontal" Margin="0,2,20,2" VerticalAlignment="Center">
                         <Grid>
                             <TextBox x:Name="SearchBox" Width="260" Padding="5,4" VerticalAlignment="Center"
-                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
                                      PreviewKeyDown="SearchBox_PreviewKeyDown"
                                      ToolTip="Matches the path or name. Separate several terms with commas. Ctrl+F focuses this box; Esc clears it."/>
                             <TextBlock Text="Filter by path… (comma for several)" IsHitTestVisible="False"
