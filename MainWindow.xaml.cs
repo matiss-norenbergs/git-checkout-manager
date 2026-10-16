@@ -41,6 +41,8 @@ namespace GitCheckoutManager
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.MatchNavigated += OnMatchNavigated;
+            _viewModel.TreeRefreshStarting += () => _savedTreeOffset = FindTreeScrollViewer()?.VerticalOffset ?? 0;
+            _viewModel.TreeRefreshed += RestoreTreeScroll;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
         }
@@ -82,6 +84,33 @@ namespace GitCheckoutManager
         /// Brings a match into view. The tree is virtualized, so each level's container may not exist yet:
         /// scroll the parent's panel to the child's index first, then take the realized container.
         /// </summary>
+        private double _savedTreeOffset;
+
+        private ScrollViewer? FindTreeScrollViewer() => FindDescendant<ScrollViewer>(MainTree);
+
+        private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+        {
+            for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+                if (child is T match) return match;
+                if (FindDescendant<T>(child) is { } nested) return nested;
+            }
+            return null;
+        }
+
+        /// <summary>After a refresh rebuilt the tree: scroll back to where the user was, once the new items have been laid out.</summary>
+        private void RestoreTreeScroll()
+        {
+            var offset = _savedTreeOffset;
+            if (offset <= 0) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)(() =>
+            {
+                MainTree.UpdateLayout();
+                FindTreeScrollViewer()?.ScrollToVerticalOffset(offset);
+            }));
+        }
+
         private void OnMatchNavigated(TreeNodeViewModel node)
         {
             var chain = new List<TreeNodeViewModel>();

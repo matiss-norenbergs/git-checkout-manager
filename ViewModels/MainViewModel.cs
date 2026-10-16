@@ -654,7 +654,11 @@ namespace GitCheckoutManager.ViewModels
                 app.SetThemeMode(value);
         }
 
-        partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(IsOperationEnabled));
+        partial void OnIsConnectedChanged(bool value)
+        {
+            OnPropertyChanged(nameof(IsOperationEnabled));
+            RefreshCommand.NotifyCanExecuteChanged();
+        }
 
         partial void OnActiveModeChanged(AppMode value)
         {
@@ -731,7 +735,8 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnSelectedBranchChanged(Branch? value)
         {
-            if (value != null && IsCloneMode)
+            // A refresh restores the selection itself and loads the tree once, afterwards.
+            if (value != null && IsCloneMode && !_isRefreshing)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
 
             UpdateDestination();
@@ -740,6 +745,8 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnSelectedRepositoryChanged(Repository? value)
         {
+            if (_isRefreshing) return; // RefreshAsync puts the same repository back; keep the folder name and branches
+
             if (value != null)
                 _ = LoadBranchesAsync();
 
@@ -836,9 +843,11 @@ namespace GitCheckoutManager.ViewModels
             }
         }
 
-        private async Task ApplyFlatNodesAsync(TreeState target, List<TreeNode> flatNodes)
+        private async Task ApplyFlatNodesAsync(TreeState target, List<TreeNode> flatNodes, HashSet<string>? expandedPaths = null)
         {
             var roots = await Task.Run(() => BuildTree(flatNodes));
+            if (expandedPaths is { Count: > 0 })
+                RestoreExpansion(roots, expandedPaths);
             target.Roots = roots;
             // The snapshot belongs to the old nodes; start fresh and re-apply any active search
             target.ExpansionSnapshot = null;
@@ -855,7 +864,7 @@ namespace GitCheckoutManager.ViewModels
 
         private const int BranchChangeDebounceMs = 400;
 
-        private async Task LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0)
+        private async Task LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0, HashSet<string>? expandedPaths = null)
         {
             if (!IsCloneMode || SelectedRepository == null || SelectedBranch == null) return;
 
@@ -887,7 +896,7 @@ namespace GitCheckoutManager.ViewModels
                 cts.Token.ThrowIfCancellationRequested();
 
                 // The whole tree is in memory, so no lazy loading is needed.
-                await ApplyFlatNodesAsync(_tabs.Clone, result.Nodes);
+                await ApplyFlatNodesAsync(_tabs.Clone, result.Nodes, expandedPaths);
                 _tabs.Clone.Key = TreeState.CloneKey(repoUrl, branchName);
                 _tabs.Clone.RepoUrl = repoUrl;
 
@@ -966,8 +975,136 @@ namespace GitCheckoutManager.ViewModels
         [RelayCommand]
         private void DismissUpdate() => IsUpdateBarVisible = false;
 
-        [RelayCommand]
-        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
+        // ── Refresh (Clone tab) ───────────────────────────────────────────────
+
+        private bool _isRefreshing;
+
+        /// <summary>Raised before a refresh replaces the tree, so the view can remember its scroll position.</summary>
+        public event Action? TreeRefreshStarting;
+
+        /// <summary>Raised after a refresh reloaded the same branch's tree, so the view can scroll back.</summary>
+        public event Action? TreeRefreshed;
+
+        private bool CanRefresh() => IsConnected;
+
+        /// <summary>
+        /// Reloads the repository list, the selected repository's branches and its folder tree from the server.
+        /// The selected repository and branch are kept when they still exist; ticks, expanded folders and the scroll
+        /// position survive when the tree is for the same branch.
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanRefresh))]
+        private async Task RefreshAsync()
+        {
+            var repoUrl = SelectedRepository?.HttpUrlToRepo;
+            var branchName = SelectedBranch?.Name;
+            var hadTree = repoUrl != null && branchName != null &&
+                          _tabs.Clone.Key == TreeState.CloneKey(repoUrl, branchName);
+            var expanded = hadTree ? CollectExpandedPaths(_tabs.Clone.Roots) : null;
+
+            _treeLoadCts?.Cancel(); // a pending branch-change load would race with the reload below
+            TreeRefreshStarting?.Invoke();
+
+            IsLoading = true;
+            StatusMessage = "Refreshing repositories and branches…";
+            _isRefreshing = true;
+            var reloadTree = false;
+            string? fallbackNote = null;
+
+            try
+            {
+                var repos = await _hostService.GetRepositoriesAsync();
+                Repositories.Clear();
+                foreach (var repo in repos)
+                    Repositories.Add(repo);
+
+                if (repoUrl == null)
+                {
+                    StatusMessage = $"Refreshed: {repos.Count} repositories loaded.";
+                    return;
+                }
+
+                var repository = repos.FirstOrDefault(r => string.Equals(r.HttpUrlToRepo, repoUrl, StringComparison.OrdinalIgnoreCase));
+                if (repository == null)
+                {
+                    // Gone from the server (or no longer visible to this token): same state as having none selected.
+                    SelectedRepository = null;
+                    SelectedBranch = null;
+                    Branches.Clear();
+                    _tabs.Clone.Clear();
+                    TreeNodes = new ObservableCollection<TreeNodeViewModel>();
+                    SelectedPathsText = string.Empty;
+                    StatusMessage = "Refreshed, but the selected repository is no longer available.";
+                    return;
+                }
+
+                var auth = string.IsNullOrWhiteSpace(Token)
+                    ? null
+                    : new GitAuth(_hostService.GitHttpUsername, Token, repository.HttpUrlToRepo);
+                var branches = await _gitService.ListRemoteBranchesAsync(repository.HttpUrlToRepo, auth);
+
+                Branches.Clear();
+                foreach (var b in branches)
+                    Branches.Add(b);
+
+                SelectedRepository = repository;
+                var branch = branches.FirstOrDefault(b => b.Name == branchName);
+                if (branch == null && branchName != null)
+                {
+                    branch = branches.FirstOrDefault(b => b.Name == repository.DefaultBranch) ?? branches.FirstOrDefault();
+                    fallbackNote = $" Branch '{branchName}' no longer exists, switched to '{branch?.Name}'.";
+                }
+                SelectedBranch = branch ?? branches.FirstOrDefault();
+
+                StatusMessage = $"Refreshed: {repos.Count} repositories, {branches.Count} branches.{fallbackNote}";
+                reloadTree = SelectedBranch != null && IsCloneMode;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Refresh failed: {ex.Message}";
+            }
+            finally
+            {
+                _isRefreshing = false;
+                IsLoading = false;
+            }
+
+            UpdateDestination();
+            ScheduleRegenerate();
+            if (!reloadTree) return;
+
+            // Only a tree for the same branch keeps its expanded folders and scroll position.
+            var sameBranch = fallbackNote == null && SelectedBranch?.Name == branchName;
+            await LoadRemoteTreeAsync(forceRefresh: true, expandedPaths: sameBranch ? expanded : null);
+            if (sameBranch && SelectedRepository != null && SelectedBranch != null &&
+                _tabs.Clone.Key == TreeState.CloneKey(SelectedRepository.HttpUrlToRepo, SelectedBranch.Name))
+                TreeRefreshed?.Invoke();
+        }
+
+        private static HashSet<string> CollectExpandedPaths(IEnumerable<TreeNodeViewModel> nodes)
+        {
+            var paths = new HashSet<string>(StringComparer.Ordinal);
+            var stack = new Stack<TreeNodeViewModel>(nodes);
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                if (!node.IsFolder) continue;
+                if (node.IsExpanded) paths.Add(node.FullPath);
+                foreach (var child in node.Children) stack.Push(child);
+            }
+            return paths;
+        }
+
+        private static void RestoreExpansion(IEnumerable<TreeNodeViewModel> nodes, HashSet<string> expandedPaths)
+        {
+            var stack = new Stack<TreeNodeViewModel>(nodes);
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                if (!node.IsFolder) continue;
+                if (expandedPaths.Contains(node.FullPath)) node.IsExpanded = true;
+                foreach (var child in node.Children) stack.Push(child);
+            }
+        }
 
         internal static string FormatSize(long bytes)
         {

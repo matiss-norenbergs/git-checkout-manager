@@ -258,10 +258,10 @@
                           ToolTip="Pick the branch to check out"
                           VerticalAlignment="Center"/>
 
-                <Button Grid.Column="6" Content="Refresh tree"
-                        Command="{Binding RefreshTreeCommand}"
+                <Button Grid.Column="6" Content="Refresh"
+                        Command="{Binding RefreshCommand}"
                         Style="{StaticResource ActionButton}" Margin="0"
-                        ToolTip="Re-fetch the folder structure from the server for the selected branch"/>
+                        ToolTip="Reload repositories, branches and the folder structure from the server"/>
             </Grid>
         </Border>
 

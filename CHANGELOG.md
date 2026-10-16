@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Changed
+- Clone tab: "Refresh tree" is now "Refresh" and also reloads the repository and branch lists from the server, keeping the selected repository and branch (falling back to the default branch if it was deleted). The folder tree keeps its expanded folders, scroll position and ticks (#36).
+
 ## [2.8.0] - 2026-10-08
 
 ### Added
