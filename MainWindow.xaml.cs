@@ -41,7 +41,7 @@ namespace GitCheckoutManager
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.MatchNavigated += OnMatchNavigated;
-            _viewModel.TreeRefreshStarting += () => _savedTreeOffset = FindTreeScrollViewer()?.VerticalOffset ?? 0;
+            _viewModel.TreeRefreshStarting += () => SaveTreeAnchor();
             _viewModel.TreeRefreshed += RestoreTreeScroll;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
@@ -80,26 +80,59 @@ namespace GitCheckoutManager
             e.Handled = true;
         }
 
+        private string? _savedTreeAnchorPath;
+
+        /// <summary>Remembers the folder or file shown at the top of the tree, so a refresh can scroll back to it.</summary>
+        private void SaveTreeAnchor()
+        {
+            _savedTreeAnchorPath = null;
+            if (FindDescendant<ScrollViewer>(MainTree) is not { VerticalOffset: > 0 }) return;
+
+            // The row under a point just inside the top-left corner of the tree.
+            var hit = System.Windows.Media.VisualTreeHelper.HitTest(MainTree, new Point(40, 6));
+            DependencyObject? visual = hit?.VisualHit;
+            while (visual != null && visual is not TreeViewItem)
+                visual = System.Windows.Media.VisualTreeHelper.GetParent(visual);
+
+            if (visual is TreeViewItem { DataContext: TreeNodeViewModel node })
+                _savedTreeAnchorPath = node.FullPath;
+        }
+
+        /// <summary>
+        /// After a refresh rebuilt the tree: bring the remembered top row back into view, once the new items have
+        /// been laid out. The scroll offset itself can't be reused because the virtualized tree only knows the
+        /// size of the rows it has realized, so the same offset lands somewhere else.
+        /// </summary>
+        private void RestoreTreeScroll()
+        {
+            var path = _savedTreeAnchorPath;
+            if (path == null) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)(() =>
+            {
+                MainTree.UpdateLayout();
+                var node = FindNodeByPath(_viewModel.TreeNodes, path);
+                if (node != null) OnMatchNavigated(node);
+            }));
+        }
+
+        private static TreeNodeViewModel? FindNodeByPath(IEnumerable<TreeNodeViewModel> roots, string path)
+        {
+            var stack = new Stack<TreeNodeViewModel>(roots);
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                if (node.FullPath == path) return node;
+                // Only a folder whose path is a prefix of the target can contain it.
+                if (node.IsFolder && path.StartsWith(node.FullPath + "/", StringComparison.Ordinal))
+                    foreach (var child in node.Children) stack.Push(child);
+            }
+            return null;
+        }
+
         /// <summary>
         /// Brings a match into view. The tree is virtualized, so each level's container may not exist yet:
         /// scroll the parent's panel to the child's index first, then take the realized container.
         /// </summary>
-        private double _savedTreeOffset;
-
-        private ScrollViewer? FindTreeScrollViewer() => FindDescendant<ScrollViewer>(MainTree);
-
-        /// <summary>After a refresh rebuilt the tree: scroll back to where the user was, once the new items have been laid out.</summary>
-        private void RestoreTreeScroll()
-        {
-            var offset = _savedTreeOffset;
-            if (offset <= 0) return;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)(() =>
-            {
-                MainTree.UpdateLayout();
-                FindTreeScrollViewer()?.ScrollToVerticalOffset(offset);
-            }));
-        }
-
         private void OnMatchNavigated(TreeNodeViewModel node)
         {
             var chain = new List<TreeNodeViewModel>();
