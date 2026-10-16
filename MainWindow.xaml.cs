@@ -88,17 +88,6 @@ namespace GitCheckoutManager
 
         private ScrollViewer? FindTreeScrollViewer() => FindDescendant<ScrollViewer>(MainTree);
 
-        private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
-        {
-            for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
-            {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
-                if (child is T match) return match;
-                if (FindDescendant<T>(child) is { } nested) return nested;
-            }
-            return null;
-        }
-
         /// <summary>After a refresh rebuilt the tree: scroll back to where the user was, once the new items have been laid out.</summary>
         private void RestoreTreeScroll()
         {
