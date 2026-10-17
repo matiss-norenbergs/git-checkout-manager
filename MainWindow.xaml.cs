@@ -111,8 +111,33 @@ namespace GitCheckoutManager
             {
                 MainTree.UpdateLayout();
                 var node = FindNodeByPath(_viewModel.TreeNodes, path);
-                if (node != null) OnMatchNavigated(node);
+                if (node != null) ScrollNodeToTop(node);
             }));
+        }
+
+        /// <summary>
+        /// The tree scrolls in pixels, so once the row's container exists its exact distance from the top is known.
+        /// Realizing rows below it can still shift the estimated extent, so measure and correct a few times.
+        /// </summary>
+        private void ScrollNodeToTop(TreeNodeViewModel node)
+        {
+            if (FindDescendant<ScrollViewer>(MainTree) is not { } viewer) return;
+
+            for (var pass = 0; pass < 5; pass++)
+            {
+                var container = RealizeContainer(node);
+                if (container == null) return;
+                container.BringIntoView();
+                MainTree.UpdateLayout();
+
+                double y;
+                try { y = container.TransformToAncestor(viewer).Transform(new Point(0, 0)).Y; }
+                catch (InvalidOperationException) { return; } // container recycled or not in the tree any more
+
+                if (Math.Abs(y) < 1) return;
+                viewer.ScrollToVerticalOffset(viewer.VerticalOffset + y);
+                MainTree.UpdateLayout();
+            }
         }
 
         private static TreeNodeViewModel? FindNodeByPath(IEnumerable<TreeNodeViewModel> roots, string path)
@@ -133,7 +158,10 @@ namespace GitCheckoutManager
         /// Brings a match into view. The tree is virtualized, so each level's container may not exist yet:
         /// scroll the parent's panel to the child's index first, then take the realized container.
         /// </summary>
-        private void OnMatchNavigated(TreeNodeViewModel node)
+        private void OnMatchNavigated(TreeNodeViewModel node) => RealizeContainer(node)?.BringIntoView();
+
+        /// <summary>The node's TreeViewItem, creating the containers on the way down when virtualization has not yet.</summary>
+        private TreeViewItem? RealizeContainer(TreeNodeViewModel node)
         {
             var chain = new List<TreeNodeViewModel>();
             for (var n = node; n != null; n = n.Parent) chain.Insert(0, n);
@@ -154,11 +182,11 @@ namespace GitCheckoutManager
                         container = current.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
                     }
                 }
-                if (container == null) return;
+                if (container == null) return null;
                 current = container;
             }
 
-            container?.BringIntoView();
+            return container;
         }
 
         private static Panel? FindItemsPanel(ItemsControl control)
