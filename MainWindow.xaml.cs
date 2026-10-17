@@ -41,8 +41,6 @@ namespace GitCheckoutManager
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.MatchNavigated += OnMatchNavigated;
-            _viewModel.TreeRefreshStarting += () => SaveTreeOffset();
-            _viewModel.TreeRefreshed += RestoreTreeScroll;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
         }
@@ -80,45 +78,11 @@ namespace GitCheckoutManager
             e.Handled = true;
         }
 
-        private double _savedTreeOffset;
-
-        /// <summary>Remembers the tree's scroll offset (in pixels) so a refresh can scroll back to it.</summary>
-        private void SaveTreeOffset() =>
-            _savedTreeOffset = FindDescendant<ScrollViewer>(MainTree)?.VerticalOffset ?? 0;
-
-        /// <summary>
-        /// After a refresh rebuilt the tree: scroll back to the saved pixel offset. The virtualized tree only knows
-        /// its full height once the rows have been laid out, and until then it clamps the offset, so keep asking
-        /// after each layout pass until the offset sticks (or give up after a few tries).
-        /// </summary>
-        private void RestoreTreeScroll()
-        {
-            var target = _savedTreeOffset;
-            if (target <= 0) return;
-
-            var attempts = 0;
-            void Attempt()
-            {
-                MainTree.UpdateLayout();
-                if (FindDescendant<ScrollViewer>(MainTree) is not { } viewer) return;
-
-                viewer.ScrollToVerticalOffset(target);
-                MainTree.UpdateLayout();
-
-                if (Math.Abs(viewer.VerticalOffset - target) < 1 || ++attempts >= 10) return;
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)Attempt);
-            }
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)Attempt);
-        }
-
         /// <summary>
         /// Brings a match into view. The tree is virtualized, so each level's container may not exist yet:
         /// scroll the parent's panel to the child's index first, then take the realized container.
         /// </summary>
-        private void OnMatchNavigated(TreeNodeViewModel node) => RealizeContainer(node)?.BringIntoView();
-
-        /// <summary>The node's TreeViewItem, creating the containers on the way down when virtualization has not yet.</summary>
-        private TreeViewItem? RealizeContainer(TreeNodeViewModel node)
+        private void OnMatchNavigated(TreeNodeViewModel node)
         {
             var chain = new List<TreeNodeViewModel>();
             for (var n = node; n != null; n = n.Parent) chain.Insert(0, n);
@@ -139,11 +103,11 @@ namespace GitCheckoutManager
                         container = current.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
                     }
                 }
-                if (container == null) return null;
+                if (container == null) return;
                 current = container;
             }
 
-            return container;
+            container?.BringIntoView();
         }
 
         private static Panel? FindItemsPanel(ItemsControl control)

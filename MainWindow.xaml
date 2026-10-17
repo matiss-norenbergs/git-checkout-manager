@@ -672,7 +672,6 @@
                               ItemContainerStyle="{StaticResource TreeItemStyle}"
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.ScrollUnit="Pixel"
                               ScrollViewer.CanContentScroll="True"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <TreeView.ItemTemplate>

@@ -117,6 +117,44 @@ namespace GitCheckoutManager.ViewModels
             _parent?.RefreshCheckedFromChildren();
         }
 
+        // ── In-place structure changes (see TreeDiff) ─────────────────────────
+
+        /// <summary>
+        /// Adds a child built from a new tree entry at its display position. A new folder under a fully ticked
+        /// folder is ticked as well, because ticking a folder selects its whole subtree.
+        /// </summary>
+        internal TreeNodeViewModel AddChildInOrder(TreeNode model, Comparison<TreeNodeViewModel> order)
+        {
+            var child = new TreeNodeViewModel(model, this);
+            if (child.IsFolder && IsChecked == true)
+            {
+                child._suppressPropagation = true;
+                child.IsChecked = true;
+                child._suppressPropagation = false;
+            }
+            TreeDiff.InsertSorted(Children, child, order);
+            return child;
+        }
+
+        /// <summary>Recomputes the tick state after sub-folders were added or removed.</summary>
+        internal void RefreshCheckedAfterChildrenChanged()
+        {
+            if (Children.Any(c => c.IsFolder))
+            {
+                RefreshCheckedFromChildren();
+                return;
+            }
+
+            // The partly ticked state only exists while there are sub-folders to derive it from.
+            if (IsChecked == null)
+            {
+                _suppressPropagation = true;
+                IsChecked = false;
+                _suppressPropagation = false;
+                _parent?.RefreshCheckedFromChildren();
+            }
+        }
+
         // ── Path collection ───────────────────────────────────────────────────
 
         /// <summary>
