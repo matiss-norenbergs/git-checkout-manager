@@ -654,7 +654,11 @@ namespace GitCheckoutManager.ViewModels
                 app.SetThemeMode(value);
         }
 
-        partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(IsOperationEnabled));
+        partial void OnIsConnectedChanged(bool value)
+        {
+            OnPropertyChanged(nameof(IsOperationEnabled));
+            RefreshCommand.NotifyCanExecuteChanged();
+        }
 
         partial void OnActiveModeChanged(AppMode value)
         {
@@ -731,7 +735,8 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnSelectedBranchChanged(Branch? value)
         {
-            if (value != null && IsCloneMode)
+            // A refresh restores the selection itself and loads the tree once, afterwards.
+            if (value != null && IsCloneMode && !_isRefreshing)
                 _ = LoadRemoteTreeAsync(debounceMs: BranchChangeDebounceMs);
 
             UpdateDestination();
@@ -740,6 +745,8 @@ namespace GitCheckoutManager.ViewModels
 
         partial void OnSelectedRepositoryChanged(Repository? value)
         {
+            if (_isRefreshing) return; // RefreshAsync puts the same repository back; keep the folder name and branches
+
             if (value != null)
                 _ = LoadBranchesAsync();
 
@@ -855,7 +862,11 @@ namespace GitCheckoutManager.ViewModels
 
         private const int BranchChangeDebounceMs = 400;
 
-        private async Task LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0)
+        /// <param name="updateInPlace">
+        /// Refresh: when the tree on screen is for the same repository and branch, keep its nodes and only apply the
+        /// difference, so scroll position, expanded folders and ticks are untouched.
+        /// </param>
+        private async Task LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0, bool updateInPlace = false)
         {
             if (!IsCloneMode || SelectedRepository == null || SelectedBranch == null) return;
 
@@ -886,10 +897,36 @@ namespace GitCheckoutManager.ViewModels
 
                 cts.Token.ThrowIfCancellationRequested();
 
+                if (updateInPlace && IsCloneMode && _tabs.Clone.Key == TreeState.CloneKey(repoUrl, branchName) && _tabs.Clone.Roots.Count > 0)
+                {
+                    var sha8 = result.CommitSha.Length >= 8 ? result.CommitSha[..8] : result.CommitSha;
+                    string? inPlaceMessage = null;
+                    if (_tabs.Clone.CommitSha == result.CommitSha)
+                    {
+                        inPlaceMessage = $"Tree is up to date at {sha8}";
+                    }
+                    else if (TreeDiff.TryApply(_tabs.Clone.Roots, result.Nodes, CompareForExplorerDisplay, TreeNodes) is { } diff)
+                    {
+                        _tabs.Clone.CommitSha = result.CommitSha;
+                        ApplyFilter(SearchFilter);
+                        ScheduleRegenerate();
+                        inPlaceMessage = $"Tree updated at {sha8}: {diff.Added} added, {diff.Removed} removed";
+                    }
+
+                    if (inPlaceMessage != null)
+                    {
+                        _tabs.Clone.StatusMessage = inPlaceMessage;
+                        StatusMessage = inPlaceMessage;
+                        return;
+                    }
+                    // Too much changed for an in-place update: rebuild below.
+                }
+
                 // The whole tree is in memory, so no lazy loading is needed.
                 await ApplyFlatNodesAsync(_tabs.Clone, result.Nodes);
                 _tabs.Clone.Key = TreeState.CloneKey(repoUrl, branchName);
                 _tabs.Clone.RepoUrl = repoUrl;
+                _tabs.Clone.CommitSha = result.CommitSha;
 
                 // Keep whatever selection still exists on the new branch.
                 if (previous.Count > 0)
@@ -966,8 +1003,96 @@ namespace GitCheckoutManager.ViewModels
         [RelayCommand]
         private void DismissUpdate() => IsUpdateBarVisible = false;
 
-        [RelayCommand]
-        private Task RefreshTree() => LoadRemoteTreeAsync(forceRefresh: true);
+        // ── Refresh (Clone tab) ───────────────────────────────────────────────
+
+        private bool _isRefreshing;
+
+        private bool CanRefresh() => IsConnected;
+
+        /// <summary>
+        /// Reloads the repository list, the selected repository's branches and its folder tree from the server.
+        /// The selected repository and branch are kept when they still exist. The tree is updated in place (see
+        /// <see cref="TreeDiff"/>), so ticks, expanded folders and the scroll position survive.
+        /// </summary>
+        [RelayCommand(CanExecute = nameof(CanRefresh))]
+        private async Task RefreshAsync()
+        {
+            var repoUrl = SelectedRepository?.HttpUrlToRepo;
+            var branchName = SelectedBranch?.Name;
+
+            _treeLoadCts?.Cancel(); // a pending branch-change load would race with the reload below
+
+            IsLoading = true;
+            StatusMessage = "Refreshing repositories and branches…";
+            _isRefreshing = true;
+            var reloadTree = false;
+            string? fallbackNote = null;
+
+            try
+            {
+                var repos = await _hostService.GetRepositoriesAsync();
+                Repositories.Clear();
+                foreach (var repo in repos)
+                    Repositories.Add(repo);
+
+                if (repoUrl == null)
+                {
+                    StatusMessage = $"Refreshed: {repos.Count} repositories loaded.";
+                    return;
+                }
+
+                var repository = repos.FirstOrDefault(r => string.Equals(r.HttpUrlToRepo, repoUrl, StringComparison.OrdinalIgnoreCase));
+                if (repository == null)
+                {
+                    // Gone from the server (or no longer visible to this token): same state as having none selected.
+                    SelectedRepository = null;
+                    SelectedBranch = null;
+                    Branches.Clear();
+                    _tabs.Clone.Clear();
+                    TreeNodes = new ObservableCollection<TreeNodeViewModel>();
+                    SelectedPathsText = string.Empty;
+                    StatusMessage = "Refreshed, but the selected repository is no longer available.";
+                    return;
+                }
+
+                var auth = string.IsNullOrWhiteSpace(Token)
+                    ? null
+                    : new GitAuth(_hostService.GitHttpUsername, Token, repository.HttpUrlToRepo);
+                var branches = await _gitService.ListRemoteBranchesAsync(repository.HttpUrlToRepo, auth);
+
+                Branches.Clear();
+                foreach (var b in branches)
+                    Branches.Add(b);
+
+                SelectedRepository = repository;
+                var branch = branches.FirstOrDefault(b => b.Name == branchName);
+                if (branch == null && branchName != null)
+                {
+                    branch = branches.FirstOrDefault(b => b.Name == repository.DefaultBranch) ?? branches.FirstOrDefault();
+                    fallbackNote = $" Branch '{branchName}' no longer exists, switched to '{branch?.Name}'.";
+                }
+                SelectedBranch = branch ?? branches.FirstOrDefault();
+
+                StatusMessage = $"Refreshed: {repos.Count} repositories, {branches.Count} branches.{fallbackNote}";
+                reloadTree = SelectedBranch != null && IsCloneMode;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Refresh failed: {ex.Message}";
+            }
+            finally
+            {
+                _isRefreshing = false;
+                IsLoading = false;
+            }
+
+            UpdateDestination();
+            ScheduleRegenerate();
+            if (!reloadTree) return;
+
+            // On the same branch the existing nodes are kept (a branch that fell back to another one has a different key).
+            await LoadRemoteTreeAsync(forceRefresh: true, updateInPlace: true);
+        }
 
         internal static string FormatSize(long bytes)
         {
@@ -2373,7 +2498,7 @@ namespace GitCheckoutManager.ViewModels
                 SortChildrenForDisplay(child);
         }
 
-        private static int CompareForExplorerDisplay(TreeNodeViewModel? x, TreeNodeViewModel? y)
+        internal static int CompareForExplorerDisplay(TreeNodeViewModel? x, TreeNodeViewModel? y)
         {
             if (ReferenceEquals(x, y)) return 0;
             if (x is null) return 1;

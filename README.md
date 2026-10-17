@@ -78,7 +78,7 @@ Pick a **Repository** and a **Branch**. Both are searchable pickers: type to fil
 
 The folder tree loads automatically. The app downloads only the repository's **folder structure** (no file contents, typically a few hundred KB to a few MB), so even very large repositories load in seconds. The result is cached per commit, so switching back to a branch you've already viewed is instant.
 
-- **Refresh tree** fetches the latest structure for the selected branch.
+- **Refresh** reloads the repository and branch lists and the folder structure for the selected branch. Your selection, ticks, expanded folders and scroll position are kept; only folders and files that were added or removed on the server change.
 - When you switch branches, folders you've ticked **stay ticked** if they also exist on the new branch.
 
 ### 2. Choose the folders
@@ -425,7 +425,7 @@ Tokens are encrypted with Windows DPAPI for your user account. They don't appear
 
 - **The Clone tab shows no repositories:** check the host, server URL and token, and that the token has the scopes listed in [Creating a token](#creating-a-token).
 - **"Folder already exists and isn't empty":** change the **Folder** name or **Clone into**, or remove the old folder.
-- **The tree looks outdated:** click **Refresh tree**.
+- **The tree looks outdated:** click **Refresh**.
 - **A folder won't go away after Apply:** another program has it open. Close it and click **Retry cleanup**.
 - **A submodule fails with "repository not found":** its URL in `.gitmodules` is wrong, or you don't have access to that repository.
 - **A submodule is "Missing from .gitmodules":** it can't be initialized until someone adds it to `.gitmodules` in the repository.

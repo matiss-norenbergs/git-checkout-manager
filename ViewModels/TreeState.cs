@@ -15,6 +15,9 @@ namespace GitCheckoutManager.ViewModels
         /// <summary>Clone only: the repository the nodes belong to, so a branch change can keep the ticks.</summary>
         public string? RepoUrl { get; set; }
 
+        /// <summary>Clone only: the commit the nodes were built from, so a refresh can tell whether anything changed.</summary>
+        public string? CommitSha { get; set; }
+
         /// <summary>Status line to show when the tab is shown again as is.</summary>
         public string StatusMessage { get; set; } = string.Empty;
 
@@ -37,6 +40,7 @@ namespace GitCheckoutManager.ViewModels
             ExpansionSnapshot = null;
             Key = null;
             RepoUrl = null;
+            CommitSha = null;
             StatusMessage = string.Empty;
         }
     }
