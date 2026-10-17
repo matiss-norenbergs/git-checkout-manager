@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-17
+
+### Added
+- The project is now licensed under the MIT License (see LICENSE).
+
 ### Changed
 - Clone tab: "Refresh tree" is now "Refresh" and also reloads the repository and branch lists from the server, keeping the selected repository and branch (falling back to the default branch if it was deleted). The folder tree is updated in place (only new and removed entries change), so your scroll position, expanded folders and ticks stay as they are (#36).
 
@@ -134,7 +139,8 @@ First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 - Submodule management window, presets, themes and settings.
 - Windows installer with self-updates (Velopack).
 
-[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.5.0...v2.6.0
