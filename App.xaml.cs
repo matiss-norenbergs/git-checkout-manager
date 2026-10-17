@@ -13,6 +13,8 @@ namespace GitCheckoutManager
         private const string DarkThemePath = "Themes/DarkTheme.xaml";
         private ThemeMode _themeMode = ThemeMode.System;
 
+        public static bool IsDarkThemeActive { get; private set; }
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -32,6 +34,10 @@ namespace GitCheckoutManager
 
             var settings = new SettingsService().LoadSettings();
             _themeMode = settings.ThemeMode;
+
+            // Catch-all so any window (including ones added later) gets a themed title bar when it loads.
+            EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent,
+                new RoutedEventHandler((s, _) => TitleBarColorizer.Apply((Window)s, IsDarkThemeActive)));
 
             ApplyTheme();
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -64,7 +70,11 @@ namespace GitCheckoutManager
         {
             var isDark = _themeMode == ThemeMode.Dark || (_themeMode == ThemeMode.System && IsDarkModeEnabled());
             var themePath = isDark ? DarkThemePath : LightThemePath;
+            IsDarkThemeActive = isDark;
             ReplaceThemeDictionary(themePath);
+
+            foreach (Window window in Windows)
+                TitleBarColorizer.Apply(window, isDark);
         }
 
         private void ReplaceThemeDictionary(string themePath)

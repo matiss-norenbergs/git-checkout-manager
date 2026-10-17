@@ -7,6 +7,8 @@ namespace GitCheckoutManager.Services
 {
     internal static class TitleBarColorizer
     {
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // builds 17763-18984
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE     = 20; // build 18985+
         private const int DWMWA_CAPTION_COLOR = 35;
         private const int DWMWA_TEXT_COLOR    = 36;
 
@@ -32,21 +34,29 @@ namespace GitCheckoutManager.Services
         [DllImport("ntdll.dll")]
         private static extern int RtlGetVersion(ref OSVERSIONINFOEX lpVersionInformation);
 
-        private static readonly bool _isWin11;
+        private static readonly uint _build;
 
         static TitleBarColorizer()
         {
             var info = new OSVERSIONINFOEX { dwOSVersionInfoSize = (uint)Marshal.SizeOf<OSVERSIONINFOEX>() };
-            _isWin11 = RtlGetVersion(ref info) == 0 && info.dwBuildNumber >= 22000;
+            _build = RtlGetVersion(ref info) == 0 ? info.dwBuildNumber : 0;
         }
 
         public static void Apply(Window window, bool isDark)
         {
-            if (!_isWin11)
+            if (_build < 17763)
                 return;
 
             var hwnd = new WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero)
+                return;
+
+            var useDark = isDark ? 1u : 0u;
+            DwmSetWindowAttribute(hwnd,
+                _build >= 18985 ? DWMWA_USE_IMMERSIVE_DARK_MODE : DWMWA_USE_IMMERSIVE_DARK_MODE_OLD,
+                ref useDark, sizeof(uint));
+
+            if (_build < 22000)
                 return;
 
             var caption = isDark ? DarkCaption : LightCaption;
