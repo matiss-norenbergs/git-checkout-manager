@@ -41,7 +41,7 @@ namespace GitCheckoutManager
             // PasswordBox cannot bind via XAML – mirror the VM's Token manually
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.MatchNavigated += OnMatchNavigated;
-            _viewModel.TreeRefreshStarting += () => SaveTreeAnchor();
+            _viewModel.TreeRefreshStarting += () => SaveTreeOffset();
             _viewModel.TreeRefreshed += RestoreTreeScroll;
             if (!string.IsNullOrEmpty(_viewModel.Token))
                 TokenBox.Password = _viewModel.Token;
@@ -80,78 +80,35 @@ namespace GitCheckoutManager
             e.Handled = true;
         }
 
-        private string? _savedTreeAnchorPath;
+        private double _savedTreeOffset;
 
-        /// <summary>Remembers the folder or file shown at the top of the tree, so a refresh can scroll back to it.</summary>
-        private void SaveTreeAnchor()
-        {
-            _savedTreeAnchorPath = null;
-            if (FindDescendant<ScrollViewer>(MainTree) is not { VerticalOffset: > 0 }) return;
-
-            // The row under a point just inside the top-left corner of the tree.
-            var hit = System.Windows.Media.VisualTreeHelper.HitTest(MainTree, new Point(40, 6));
-            DependencyObject? visual = hit?.VisualHit;
-            while (visual != null && visual is not TreeViewItem)
-                visual = System.Windows.Media.VisualTreeHelper.GetParent(visual);
-
-            if (visual is TreeViewItem { DataContext: TreeNodeViewModel node })
-                _savedTreeAnchorPath = node.FullPath;
-        }
+        /// <summary>Remembers the tree's scroll offset (in pixels) so a refresh can scroll back to it.</summary>
+        private void SaveTreeOffset() =>
+            _savedTreeOffset = FindDescendant<ScrollViewer>(MainTree)?.VerticalOffset ?? 0;
 
         /// <summary>
-        /// After a refresh rebuilt the tree: bring the remembered top row back into view, once the new items have
-        /// been laid out. The scroll offset itself can't be reused because the virtualized tree only knows the
-        /// size of the rows it has realized, so the same offset lands somewhere else.
+        /// After a refresh rebuilt the tree: scroll back to the saved pixel offset. The virtualized tree only knows
+        /// its full height once the rows have been laid out, and until then it clamps the offset, so keep asking
+        /// after each layout pass until the offset sticks (or give up after a few tries).
         /// </summary>
         private void RestoreTreeScroll()
         {
-            var path = _savedTreeAnchorPath;
-            if (path == null) return;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)(() =>
+            var target = _savedTreeOffset;
+            if (target <= 0) return;
+
+            var attempts = 0;
+            void Attempt()
             {
                 MainTree.UpdateLayout();
-                var node = FindNodeByPath(_viewModel.TreeNodes, path);
-                if (node != null) ScrollNodeToTop(node);
-            }));
-        }
+                if (FindDescendant<ScrollViewer>(MainTree) is not { } viewer) return;
 
-        /// <summary>
-        /// The tree scrolls in pixels, so once the row's container exists its exact distance from the top is known.
-        /// Realizing rows below it can still shift the estimated extent, so measure and correct a few times.
-        /// </summary>
-        private void ScrollNodeToTop(TreeNodeViewModel node)
-        {
-            if (FindDescendant<ScrollViewer>(MainTree) is not { } viewer) return;
-
-            for (var pass = 0; pass < 5; pass++)
-            {
-                var container = RealizeContainer(node);
-                if (container == null) return;
-                container.BringIntoView();
+                viewer.ScrollToVerticalOffset(target);
                 MainTree.UpdateLayout();
 
-                double y;
-                try { y = container.TransformToAncestor(viewer).Transform(new Point(0, 0)).Y; }
-                catch (InvalidOperationException) { return; } // container recycled or not in the tree any more
-
-                if (Math.Abs(y) < 1) return;
-                viewer.ScrollToVerticalOffset(viewer.VerticalOffset + y);
-                MainTree.UpdateLayout();
+                if (Math.Abs(viewer.VerticalOffset - target) < 1 || ++attempts >= 10) return;
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)Attempt);
             }
-        }
-
-        private static TreeNodeViewModel? FindNodeByPath(IEnumerable<TreeNodeViewModel> roots, string path)
-        {
-            var stack = new Stack<TreeNodeViewModel>(roots);
-            while (stack.Count > 0)
-            {
-                var node = stack.Pop();
-                if (node.FullPath == path) return node;
-                // Only a folder whose path is a prefix of the target can contain it.
-                if (node.IsFolder && path.StartsWith(node.FullPath + "/", StringComparison.Ordinal))
-                    foreach (var child in node.Children) stack.Push(child);
-            }
-            return null;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)Attempt);
         }
 
         /// <summary>
