@@ -78,7 +78,7 @@ Pick a **Repository** and a **Branch**. Both are searchable pickers: type to fil
 
 The folder tree loads automatically. The app downloads only the repository's **folder structure** (no file contents, typically a few hundred KB to a few MB), so even very large repositories load in seconds. The result is cached per commit, so switching back to a branch you've already viewed is instant.
 
-- **Refresh** reloads the repository and branch lists and the folder structure for the selected branch. Your selection, expanded folders and scroll position are kept.
+- **Refresh** reloads the repository and branch lists and the folder structure for the selected branch. Your selection and ticks are kept, and if the branch has no new commits the tree stays exactly as you left it (expanded folders and scroll position included).
 - When you switch branches, folders you've ticked **stay ticked** if they also exist on the new branch.
 
 ### 2. Choose the folders

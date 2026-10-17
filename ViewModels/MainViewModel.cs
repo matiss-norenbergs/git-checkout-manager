@@ -864,9 +864,11 @@ namespace GitCheckoutManager.ViewModels
 
         private const int BranchChangeDebounceMs = 400;
 
-        private async Task LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0, HashSet<string>? expandedPaths = null)
+        /// <returns>True when the tree nodes were replaced; false when it failed, was superseded, or was unchanged and kept.</returns>
+        private async Task<bool> LoadRemoteTreeAsync(bool forceRefresh = false, int debounceMs = 0,
+            HashSet<string>? expandedPaths = null, bool keepIfUnchanged = false)
         {
-            if (!IsCloneMode || SelectedRepository == null || SelectedBranch == null) return;
+            if (!IsCloneMode || SelectedRepository == null || SelectedBranch == null) return false;
 
             _treeLoadCts?.Cancel();
             _treeLoadCts?.Dispose();
@@ -895,10 +897,21 @@ namespace GitCheckoutManager.ViewModels
 
                 cts.Token.ThrowIfCancellationRequested();
 
+                // Same commit as what is on screen: keep the nodes, so expansion, ticks and scroll position stay untouched.
+                if (keepIfUnchanged && _tabs.Clone.Key == TreeState.CloneKey(repoUrl, branchName) &&
+                    _tabs.Clone.CommitSha == result.CommitSha)
+                {
+                    var upToDate = $"Tree is up to date at {(result.CommitSha.Length >= 8 ? result.CommitSha[..8] : result.CommitSha)}";
+                    _tabs.Clone.StatusMessage = upToDate;
+                    if (IsCloneMode) StatusMessage = upToDate;
+                    return false;
+                }
+
                 // The whole tree is in memory, so no lazy loading is needed.
                 await ApplyFlatNodesAsync(_tabs.Clone, result.Nodes, expandedPaths);
                 _tabs.Clone.Key = TreeState.CloneKey(repoUrl, branchName);
                 _tabs.Clone.RepoUrl = repoUrl;
+                _tabs.Clone.CommitSha = result.CommitSha;
 
                 // Keep whatever selection still exists on the new branch.
                 if (previous.Count > 0)
@@ -919,6 +932,7 @@ namespace GitCheckoutManager.ViewModels
                 _tabs.Clone.StatusMessage = message;
                 if (IsCloneMode)
                     StatusMessage = message;
+                return true;
             }
             catch (OperationCanceledException)
             {
@@ -933,6 +947,7 @@ namespace GitCheckoutManager.ViewModels
                 if (ReferenceEquals(_treeLoadCts, cts))
                     IsLoading = false;
             }
+            return false;
         }
 
         [RelayCommand]
@@ -1074,9 +1089,11 @@ namespace GitCheckoutManager.ViewModels
 
             // Only a tree for the same branch keeps its expanded folders and scroll position.
             var sameBranch = fallbackNote == null && SelectedBranch?.Name == branchName;
-            await LoadRemoteTreeAsync(forceRefresh: true, expandedPaths: sameBranch ? expanded : null);
-            if (sameBranch && SelectedRepository != null && SelectedBranch != null &&
-                _tabs.Clone.Key == TreeState.CloneKey(SelectedRepository.HttpUrlToRepo, SelectedBranch.Name))
+            // An unchanged tree (same commit) is kept as is, so nothing needs restoring. A changed one is rebuilt
+            // and the expanded folders and scroll offset are put back on a best-effort basis.
+            var rebuilt = await LoadRemoteTreeAsync(forceRefresh: true, expandedPaths: sameBranch ? expanded : null,
+                keepIfUnchanged: sameBranch);
+            if (rebuilt && sameBranch)
                 TreeRefreshed?.Invoke();
         }
 
