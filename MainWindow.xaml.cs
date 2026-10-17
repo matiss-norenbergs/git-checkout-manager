@@ -140,10 +140,7 @@ namespace GitCheckoutManager
 
         private void OnSourceInitialized(object? sender, System.EventArgs e)
         {
-            var settings = new SettingsService().LoadSettings();
-            var isDark = settings.ThemeMode == ThemeMode.Dark ||
-                         (settings.ThemeMode == ThemeMode.System && App.IsDarkModeEnabled());
-            TitleBarColorizer.Apply(this, isDark);
+            TitleBarColorizer.Apply(this, App.IsDarkThemeActive);
         }
 
         private void TokenBox_PasswordChanged(object sender, RoutedEventArgs e)

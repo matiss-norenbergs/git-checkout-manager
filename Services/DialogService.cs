@@ -48,7 +48,7 @@ namespace GitCheckoutManager.Services
         {
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
                         ?? Application.Current?.MainWindow;
-            var window = new MessageWindow(title, message, details, confirm, destructive) { Owner = owner };
+            var window = Themed(new MessageWindow(title, message, details, confirm, destructive) { Owner = owner });
             return window.ShowDialog() == true;
         }
 
@@ -56,7 +56,7 @@ namespace GitCheckoutManager.Services
         {
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
                         ?? Application.Current?.MainWindow;
-            var window = new MessageWindow(title, message, null, confirm: false, destructive: false) { Owner = owner };
+            var window = Themed(new MessageWindow(title, message, null, confirm: false, destructive: false) { Owner = owner });
             window.UseThreeWay(primary, secondary);
             window.ShowDialog();
             return window.Choice;
@@ -64,25 +64,25 @@ namespace GitCheckoutManager.Services
 
         public RemovalReviewChoices? ShowRemovalReview(RemovalReviewModel model)
         {
-            var window = new RemovalReviewWindow(model) { Owner = Application.Current?.MainWindow };
+            var window = Themed(new RemovalReviewWindow(model) { Owner = Application.Current?.MainWindow });
             return window.ShowDialog() == true ? window.Choices : null;
         }
 
         public void ShowSettings(SettingsViewModel viewModel)
         {
-            var window = new SettingsWindow { DataContext = viewModel, Owner = Application.Current?.MainWindow };
+            var window = Themed(new SettingsWindow { DataContext = viewModel, Owner = Application.Current?.MainWindow });
             window.ShowDialog();
         }
 
         public void ShowSubmodules(SubmodulesViewModel vm)
         {
-            var window = new SubmodulesWindow { DataContext = vm, Owner = Application.Current?.MainWindow };
+            var window = Themed(new SubmodulesWindow { DataContext = vm, Owner = Application.Current?.MainWindow });
             window.ShowDialog();
         }
 
         public void ShowLocalChanges(LocalChangesViewModel vm)
         {
-            var window = new LocalChangesWindow { DataContext = vm, Owner = Application.Current?.MainWindow };
+            var window = Themed(new LocalChangesWindow { DataContext = vm, Owner = Application.Current?.MainWindow });
             window.ShowDialog();
         }
 
@@ -91,7 +91,7 @@ namespace GitCheckoutManager.Services
             // Owner is the Submodules window that is currently active, falling back to the main window.
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
                         ?? Application.Current?.MainWindow;
-            var window = new SubmoduleUrlWindow(model) { Owner = owner };
+            var window = Themed(new SubmoduleUrlWindow(model) { Owner = owner });
             return window.ShowDialog() == true ? window.ChosenUrl : null;
         }
 
@@ -99,8 +99,14 @@ namespace GitCheckoutManager.Services
         {
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
                         ?? Application.Current?.MainWindow;
-            var window = new SubmoduleBranchWindow(model) { Owner = owner };
+            var window = Themed(new SubmoduleBranchWindow(model) { Owner = owner });
             return window.ShowDialog() == true ? window.ChosenBranch : null;
+        }
+
+        private static T Themed<T>(T window) where T : Window
+        {
+            window.SourceInitialized += (_, _) => TitleBarColorizer.Apply(window, App.IsDarkThemeActive);
+            return window;
         }
 
         public string? ShowInputDialog(string title, string prompt, string defaultValue = "")
@@ -136,7 +142,7 @@ namespace GitCheckoutManager.Services
             panel.Children.Add(textBox);
             panel.Children.Add(buttonRow);
 
-            var window = new Window
+            var window = Themed(new Window
             {
                 Title = title,
                 Content = panel,
@@ -145,7 +151,7 @@ namespace GitCheckoutManager.Services
                 Owner = Application.Current.MainWindow,
                 ResizeMode = ResizeMode.NoResize,
                 ShowInTaskbar = false
-            };
+            });
 
             okButton.Click += (_, _) => { result = textBox.Text; window.DialogResult = true; };
             textBox.Loaded += (_, _) => { textBox.Focus(); textBox.SelectAll(); };
