@@ -63,6 +63,25 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Current size:" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding CacheSizeText}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Clear tree cache" Padding="14,5"
+                            Command="{Binding ClearTreeCacheCommand}"
+                            ToolTip="Delete the locally cached tree data for every repository"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource SettingsSection}">
+            <StackPanel>
+                <TextBlock Text="About" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold"/>
                         <TextBlock Text="Documentation:" FontSize="12" Margin="0,4,0,0"
