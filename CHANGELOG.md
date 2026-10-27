@@ -4,9 +4,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-10-27
+
 ### Added
-- Clone tab: the "Folder" field accepts a relative path such as `folderA/sub/target`. Missing folders are created and the checkout goes into the last one, which must not already exist or must be empty (#40).
-- Settings: the About section links to the GitHub repository (#40).
+- Clone tab: the "Folder" field accepts a relative path such as `folderA/sub/target` (either slash). The missing folders are created and the checkout goes into the last one, which must not exist yet or must be empty. Absolute paths and `..` are rejected, and a file in the middle of the path is reported before you run anything (#40).
+- Settings: the About section has a link to the GitHub repository, where the documentation is (#40).
 
 ### Changed
 - The Settings window is 1.5 times as wide (#40).
@@ -146,7 +148,8 @@ First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 - Submodule management window, presets, themes and settings.
 - Windows installer with self-updates (Velopack).
 
-[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.6.0...v2.7.0
