@@ -30,6 +30,24 @@ public class CommandGeneratorTests
     }
 
     [Fact]
+    public void Bat_uses_backslashes_for_a_nested_target_folder()
+    {
+        var bat = _gen.GenerateBatScript("https://x/r.git", "main", new[] { "apps" }, "a/b\\c");
+
+        Assert.Contains("\"https://x/r.git\" \"a\\b\\c\"", bat);
+        Assert.Contains("cd /d \"a\\b\\c\"", bat);
+    }
+
+    [Fact]
+    public void Sh_uses_forward_slashes_for_a_nested_target_folder()
+    {
+        var sh = _gen.GenerateShScript("https://x/r.git", "main", new[] { "apps" }, "a/b\\c");
+
+        Assert.Contains("'https://x/r.git' 'a/b/c'", sh);
+        Assert.Contains("cd 'a/b/c' || fail", sh);
+    }
+
+    [Fact]
     public void Bat_checks_errorlevel_after_commands_and_has_failed_label()
     {
         var bat = _gen.GenerateBatScript("https://x/r.git", "main", new[] { "apps" }, "r");
