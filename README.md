@@ -100,7 +100,7 @@ The **Selected Paths** panel lists your selection, and the **Script** panel show
 |---|---|
 | **Sparse – selected folders / Full clone – everything** | The clone mode, remembered between runs. **Sparse** (default) checks out only the ticked folders. **Full clone** runs a plain `git clone --branch` of the whole repository, with no filter and no sparse-checkout. In Full mode the tree checkboxes and presets are disabled (expanding and search still work), **Selected Paths** shows *All folders*, and you don't need to tick anything before running or saving. **New Branch** and **Initialize submodules** work the same in both modes. |
 | **Clone into** | The parent folder for new checkouts. Remembered between runs. |
-| **Folder** | The checkout's folder name. It's generated from the naming pattern (default `{repo}_{branch}`, see [Settings](#settings)) and follows your repo and branch choices. Type your own name to override it; **Auto** switches back to the generated name. |
+| **Folder** | The checkout's folder name. It's generated from the naming pattern (default `{repo}_{branch}`, see [Settings](#settings)) and follows your repo and branch choices. Type your own name to override it; **Auto** switches back to the generated name. You can also type a relative path such as `team/projects/my-checkout` (`/` or `\`): the missing folders are created and the checkout goes into the last one, which must not exist yet or be empty. |
 | **New Branch** | Optional. After checkout, creates a **local** branch with this name from the selected branch. Nothing is pushed. Invalid branch names are flagged. |
 | **Initialize submodules** | Initializes the submodules inside your selected folders (see [the generated script](#the-generated-script)). |
 | **Keep CMD window open** | Keeps the console open after a successful run. After a failure it always stays open. |
@@ -322,6 +322,7 @@ Open with **⚙** (top-right).
 | **Theme** | System, Light or Dark. Applies immediately. |
 | **Folder name pattern** | How the Clone tab names new checkout folders. Tokens: `{repo}` repository name, `{branch}` the **New Branch** name if set, otherwise the selected branch, `{base}` always the selected branch. Default: `{repo}_{branch}`. |
 | **Tree cache** | Shows the size of the cached folder structures and lets you clear them. |
+| **About** | The app version, **Check for updates**, and a link to this repository. |
 
 ---
 

@@ -3,6 +3,8 @@ namespace GitCheckoutManager.Services
     /// <summary>The running app's version, without the "+commit" build metadata.</summary>
     public static class AppVersion
     {
+        public const string RepositoryUrl = "https://github.com/matiss-norenbergs/git-checkout-manager";
+
         public static string Current { get; } = Read();
 
         private static string Read()

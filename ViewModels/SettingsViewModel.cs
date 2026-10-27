@@ -27,6 +27,9 @@ namespace GitCheckoutManager.ViewModels
         [NotifyCanExecuteChangedFor(nameof(CheckForUpdatesCommand))]
         private bool _isCheckingForUpdates;
 
+        public string RepositoryUrl => AppVersion.RepositoryUrl;
+        public string RepositoryLinkText => AppVersion.RepositoryUrl.Replace("https://", "");
+
         public string VersionText { get; } = "Git Checkout Manager – Version " + AppVersion.Current;
 
         public SettingsViewModel(ThemeMode currentTheme, string folderNamePattern,
@@ -69,6 +72,21 @@ namespace GitCheckoutManager.ViewModels
             UpdateStatusText = "Checking…";
             try { UpdateStatusText = await _checkForUpdates(); }
             finally { IsCheckingForUpdates = false; }
+        }
+
+        [RelayCommand]
+        private void OpenRepository()
+        {
+            // The URL is a fixed constant, so shell-executing it is safe.
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(AppVersion.RepositoryUrl) { UseShellExecute = true });
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                UpdateStatusText = "Couldn't open the browser: " + ex.Message;
+            }
         }
 
         private bool CanCheckForUpdates() => !IsCheckingForUpdates;
