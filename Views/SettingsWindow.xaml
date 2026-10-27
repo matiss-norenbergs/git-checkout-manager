@@ -65,7 +65,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold"/>
-                        <TextBlock Text="Documentation &amp; source:" FontSize="12" Margin="0,4,0,0"
+                        <TextBlock Text="Documentation:" FontSize="12" Margin="0,4,0,0"
                                    Foreground="{DynamicResource MutedTextBrush}"/>
                         <Button Content="{Binding RepositoryLinkText}" Style="{StaticResource LinkButton}"
                                 FontSize="12" HorizontalAlignment="Left"
