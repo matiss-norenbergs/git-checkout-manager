@@ -63,37 +63,33 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="Current size:" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding CacheSizeText}" FontWeight="SemiBold"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="Documentation &amp; source:" FontSize="12" Margin="0,0,6,0"
+                                       Foreground="{DynamicResource MutedTextBrush}"/>
+                            <Button Content="{Binding RepositoryLinkText}" Style="{StaticResource LinkButton}"
+                                    FontSize="12" Command="{Binding OpenRepositoryCommand}"
+                                    ToolTip="{Binding RepositoryUrl}"/>
+                        </StackPanel>
                     </StackPanel>
-                    <Button Grid.Column="1" Content="Clear tree cache" Padding="14,5"
-                            Command="{Binding ClearTreeCacheCommand}"
-                            ToolTip="Delete the locally cached tree data for every repository"/>
-                </Grid>
-            </StackPanel>
-        </Border>
-
-        <Border Style="{StaticResource SettingsSection}">
-            <StackPanel>
-                <TextBlock Text="About" Style="{StaticResource SectionTitle}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     <Button Grid.Column="1" Content="Check for updates" Padding="14,5"
+                            VerticalAlignment="Center"
                             Command="{Binding CheckForUpdatesCommand}"/>
                 </Grid>
-                <TextBlock Text="{Binding UpdateStatusText}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
-                           Foreground="{DynamicResource MutedTextBrush}"/>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="Documentation &amp; source:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <Button Content="{Binding RepositoryLinkText}" Style="{StaticResource LinkButton}"
-                            Command="{Binding OpenRepositoryCommand}"
-                            ToolTip="{Binding RepositoryUrl}"/>
-                </StackPanel>
+                <!-- Only takes space once there is a status to show. -->
+                <TextBlock Text="{Binding UpdateStatusText}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+                            <Style.Triggers>
+                                <Trigger Property="Text" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </StackPanel>
         </Border>
 
