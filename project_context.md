@@ -104,6 +104,7 @@ _bin/          prebuilt binaries, intentionally committed for now
 - Submodule loop is driven by `.gitmodules` and updates each path individually. Gitlinks missing from `.gitmodules` print a `WARNING:`.
 - Exit codes: `0` ok, `1` failed (always pauses), `2` submodule failures (always pauses, after the summary line). `ExecuteScriptAsync` maps these to status messages and only adds exit 0/2 checkouts to recent checkouts.
 - Saved scripts use the folder **name** (relative, portable). Execute Locally uses the full `CloneParentFolder\FolderName` path.
+- The Clone "Folder" input may be a relative path (`a/b/target`, #40). `CloneFolderPath` (UI-free) validates every segment, rejects rooted paths and `..`, and normalises separators; `CommandGenerator` converts to `\` (bat) or `/` (sh). `git clone` itself creates the missing parent folders. `UpdateDestination` also reports a file in the middle of the path and a non-empty final folder.
 
 ### Cone-mode rule
 Only **folders** can be selected. `GetCheckedPaths` never yields files, and a defensive filter (`DropFilePaths`) runs before every `sparse-checkout set`. Files show `IsIncluded` (root files always; a folder's direct files whenever it or a descendant is selected).

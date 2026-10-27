@@ -501,11 +501,8 @@ namespace GitCheckoutManager.ViewModels
 
         // ── Destination ───────────────────────────────────────────────────────
 
-        private static bool IsValidFolderName(string name) =>
-            !string.IsNullOrWhiteSpace(name) &&
-            name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
-            name != "." && name != ".." &&
-            !name.EndsWith('.') && !name.EndsWith(' ');
+        /// <summary>The Folder input as a clean relative path for the generated scripts (no doubled or trailing slashes).</summary>
+        private string ScriptFolderName => CloneFolderPath.Normalize(FolderName) ?? FolderName;
 
         /// <summary>The settings window changed the pattern; apply it to the automatic name.</summary>
         private void ApplyFolderNamePattern(string pattern)
@@ -549,17 +546,30 @@ namespace GitCheckoutManager.ViewModels
                 error = "Select a branch";
                 isHint = true;
             }
-            else if (!IsValidFolderName(FolderName))
+            else if (CloneFolderPath.Split(FolderName) is not { } segments)
                 error = "Folder name is invalid";
             else if (CloneParentFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
                 error = "Clone location is invalid";
             else
             {
-                path = Path.Combine(CloneParentFolder, FolderName);
+                path = Path.Combine(CloneParentFolder, string.Join(Path.DirectorySeparatorChar, segments));
                 try
                 {
-                    if (File.Exists(path) ||
-                        (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()))
+                    // A file in the middle of the path stops git from creating the folders below it.
+                    var current = CloneParentFolder;
+                    foreach (var segment in segments.Take(segments.Count - 1))
+                    {
+                        current = Path.Combine(current, segment);
+                        if (File.Exists(current))
+                        {
+                            error = $"\"{segment}\" is a file, not a folder";
+                            break;
+                        }
+                    }
+
+                    if (error == null &&
+                        (File.Exists(path) ||
+                         (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any())))
                         error = "Folder already exists and isn't empty";
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1176,7 +1186,7 @@ namespace GitCheckoutManager.ViewModels
                 SelectedRepository!.HttpUrlToRepo,
                 SelectedBranch!.Name,
                 paths,
-                FolderName,
+                ScriptFolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen,
@@ -1242,7 +1252,7 @@ namespace GitCheckoutManager.ViewModels
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                FolderName,
+                ScriptFolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen,
@@ -1278,7 +1288,7 @@ namespace GitCheckoutManager.ViewModels
                 return;
             }
 
-            var targetPath = Path.Combine(CloneParentFolder, FolderName);
+            var targetPath = Path.Combine(CloneParentFolder, ScriptFolderName);
             var newBranch = string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName;
 
             var scriptToRun = _commandGenerator.GenerateBatScript(

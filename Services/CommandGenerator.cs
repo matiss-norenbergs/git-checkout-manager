@@ -13,6 +13,7 @@ namespace GitCheckoutManager.Services
         {
             var paths = sparsePaths.ToList();
             var sb = new StringBuilder();
+            targetFolder = CloneFolderPath.WithSeparator(targetFolder, '\\');
 
             sb.AppendLine("@echo off");
             sb.AppendLine("chcp 65001 >nul");
@@ -98,6 +99,7 @@ namespace GitCheckoutManager.Services
         {
             var paths = sparsePaths.ToList();
             var sb = new StringBuilder();
+            targetFolder = CloneFolderPath.WithSeparator(targetFolder, '/');
 
             AppendShHeader(sb, keepWindowOpen);
 
