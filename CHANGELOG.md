@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+- Clone tab: the "Folder" field accepts a relative path such as `folderA/sub/target`. Missing folders are created and the checkout goes into the last one, which must not already exist or must be empty (#40).
+- Settings: the About section links to the GitHub repository (#40).
+
+### Changed
+- The Settings window is twice as wide (#40).
+
 ## [2.9.0] - 2026-10-17
 
 ### Added
