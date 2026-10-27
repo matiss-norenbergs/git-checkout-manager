@@ -65,13 +65,12 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding VersionText}" FontWeight="SemiBold"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="Documentation &amp; source:" FontSize="12" Margin="0,0,6,0"
-                                       Foreground="{DynamicResource MutedTextBrush}"/>
-                            <Button Content="{Binding RepositoryLinkText}" Style="{StaticResource LinkButton}"
-                                    FontSize="12" Command="{Binding OpenRepositoryCommand}"
-                                    ToolTip="{Binding RepositoryUrl}"/>
-                        </StackPanel>
+                        <TextBlock Text="Documentation &amp; source:" FontSize="12" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                        <Button Content="{Binding RepositoryLinkText}" Style="{StaticResource LinkButton}"
+                                FontSize="12" HorizontalAlignment="Left"
+                                Command="{Binding OpenRepositoryCommand}"
+                                ToolTip="{Binding RepositoryUrl}"/>
                     </StackPanel>
                     <Button Grid.Column="1" Content="Check for updates" Padding="14,5"
                             VerticalAlignment="Center"
