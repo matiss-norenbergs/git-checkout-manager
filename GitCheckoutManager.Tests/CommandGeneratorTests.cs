@@ -39,6 +39,16 @@ public class CommandGeneratorTests
     }
 
     [Fact]
+    public void A_trailing_slash_on_the_target_folder_is_dropped()
+    {
+        var bat = _gen.GenerateBatScript("https://x/r.git", "main", new[] { "apps" }, "a/b/");
+        var sh = _gen.GenerateShScript("https://x/r.git", "main", new[] { "apps" }, "a\\b\\");
+
+        Assert.Contains("\"https://x/r.git\" \"a\\b\"", bat);
+        Assert.Contains("'https://x/r.git' 'a/b'", sh);
+    }
+
+    [Fact]
     public void Sh_uses_forward_slashes_for_a_nested_target_folder()
     {
         var sh = _gen.GenerateShScript("https://x/r.git", "main", new[] { "apps" }, "a/b\\c");

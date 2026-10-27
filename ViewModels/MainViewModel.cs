@@ -501,6 +501,9 @@ namespace GitCheckoutManager.ViewModels
 
         // ── Destination ───────────────────────────────────────────────────────
 
+        /// <summary>The Folder input as a clean relative path for the generated scripts (no doubled or trailing slashes).</summary>
+        private string ScriptFolderName => CloneFolderPath.Normalize(FolderName) ?? FolderName;
+
         /// <summary>The settings window changed the pattern; apply it to the automatic name.</summary>
         private void ApplyFolderNamePattern(string pattern)
         {
@@ -1183,7 +1186,7 @@ namespace GitCheckoutManager.ViewModels
                 SelectedRepository!.HttpUrlToRepo,
                 SelectedBranch!.Name,
                 paths,
-                FolderName,
+                ScriptFolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen,
@@ -1249,7 +1252,7 @@ namespace GitCheckoutManager.ViewModels
                 SelectedRepository?.HttpUrlToRepo ?? string.Empty,
                 SelectedBranch?.Name ?? string.Empty,
                 paths,
-                FolderName,
+                ScriptFolderName,
                 string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName,
                 InitSubmodules,
                 KeepWindowOpen,
@@ -1285,7 +1288,7 @@ namespace GitCheckoutManager.ViewModels
                 return;
             }
 
-            var targetPath = Path.Combine(CloneParentFolder, CloneFolderPath.Normalize(FolderName) ?? FolderName);
+            var targetPath = Path.Combine(CloneParentFolder, ScriptFolderName);
             var newBranch = string.IsNullOrWhiteSpace(NewBranchName) ? null : NewBranchName;
 
             var scriptToRun = _commandGenerator.GenerateBatScript(

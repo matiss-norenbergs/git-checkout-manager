@@ -28,9 +28,12 @@ namespace GitCheckoutManager.Services
         public static string? Normalize(string? input) =>
             Split(input) is { } segments ? string.Join(Path.DirectorySeparatorChar, segments) : null;
 
-        /// <summary>The path with the given separator, for a script that runs under another shell than this app.</summary>
+        /// <summary>
+        /// The path with the given separator, for a script that runs under another shell than this app. A trailing separator is
+        /// dropped: in a quoted bat argument <c>"a\b\"</c> reads as an escaped quote.
+        /// </summary>
         public static string WithSeparator(string path, char separator) =>
-            path.Replace('/', separator).Replace('\\', separator);
+            path.Replace('/', separator).Replace('\\', separator).TrimEnd(separator);
 
         private static bool IsValidSegment(string name) =>
             !string.IsNullOrWhiteSpace(name) &&
