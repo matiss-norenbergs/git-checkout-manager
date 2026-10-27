@@ -9,7 +9,7 @@ All notable changes to this project are documented in this file. The format is b
 - Settings: the About section links to the GitHub repository (#40).
 
 ### Changed
-- The Settings window is twice as wide (#40).
+- The Settings window is 1.5 times as wide (#40).
 
 ## [2.9.0] - 2026-10-17
 
