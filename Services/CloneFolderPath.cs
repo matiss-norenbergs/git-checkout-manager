@@ -1,11 +1,15 @@
+using System.IO;
+
 namespace GitCheckoutManager.Services
 {
     /// <summary>
-    /// Validates and normalises the "Folder" input of the Clone tab. It is a name or a relative path such as
+    /// Validates and normalizes the "Folder" input of the Clone tab. It is a name or a relative path such as
     /// "folderA/sub/target"; either slash may separate the segments. Git creates the missing parent folders when it clones.
     /// </summary>
     public static class CloneFolderPath
     {
+        private static readonly char[] Separators = ['/', '\\'];
+
         /// <summary>The segments of a valid path, or null when the input isn't a valid relative folder path.</summary>
         public static IReadOnlyList<string>? Split(string? input)
         {
@@ -15,7 +19,7 @@ namespace GitCheckoutManager.Services
             if (input[0] is '/' or '\\') return null;
 
             // Empty segments (a doubled or trailing slash) are ignored.
-            var segments = input.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            var segments = input.Split(Separators, StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length == 0 || !segments.All(IsValidSegment)) return null;
             return segments;
         }
