@@ -2,7 +2,7 @@
 using System.Windows;
 using GitCheckoutManager.Models;
 using GitCheckoutManager.Services;
-using ThemeMode = GitCheckoutManager.Models.ThemeMode;
+using AppThemeMode = GitCheckoutManager.Models.ThemeMode;
 using Microsoft.Win32;
 using Velopack;
 
@@ -12,7 +12,7 @@ namespace GitCheckoutManager
     {
         private const string LightThemePath = "Themes/LightTheme.xaml";
         private const string DarkThemePath = "Themes/DarkTheme.xaml";
-        private ThemeMode _themeMode = ThemeMode.System;
+        private AppThemeMode _themeMode = AppThemeMode.System;
 
         public static bool IsDarkThemeActive { get; private set; }
 
@@ -54,14 +54,14 @@ namespace GitCheckoutManager
 
         private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
         {
-            if (_themeMode != ThemeMode.System)
+            if (_themeMode != AppThemeMode.System)
                 return;
 
             if (e.Category == UserPreferenceCategory.General || e.Category == UserPreferenceCategory.Color)
                 ApplyTheme();
         }
 
-        public void SetThemeMode(ThemeMode themeMode)
+        public void SetThemeMode(AppThemeMode themeMode)
         {
             _themeMode = themeMode;
             ApplyTheme();
@@ -69,7 +69,7 @@ namespace GitCheckoutManager
 
         private void ApplyTheme()
         {
-            var isDark = _themeMode == ThemeMode.Dark || (_themeMode == ThemeMode.System && IsDarkModeEnabled());
+            var isDark = _themeMode == AppThemeMode.Dark || (_themeMode == AppThemeMode.System && IsDarkModeEnabled());
             var themePath = isDark ? DarkThemePath : LightThemePath;
             IsDarkThemeActive = isDark;
             ReplaceThemeDictionary(themePath);
