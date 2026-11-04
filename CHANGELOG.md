@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-11-04
+
 ### Changed
 - The app now runs on .NET 10 (.NET 8 reaches end of support on 2026-11-10). The installer and the in-app updater download the .NET 10 Desktop Runtime if it is missing; no action is needed on your side.
 
@@ -151,7 +153,8 @@ First tagged release, as Git Sparse Checkout Manager (GitSparseManager).
 - Submodule management window, presets, themes and settings.
 - Windows installer with self-updates (Velopack).
 
-[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/matiss-norenbergs/git-checkout-manager/compare/v2.7.0...v2.8.0
