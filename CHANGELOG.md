@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Changed
+- The app now runs on .NET 10 (.NET 8 reaches end of support on 2026-11-10). The installer and the in-app updater download the .NET 10 Desktop Runtime if it is missing; no action is needed on your side.
+
 ## [2.10.0] - 2026-10-27
 
 ### Added
