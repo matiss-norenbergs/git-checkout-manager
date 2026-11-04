@@ -2,6 +2,7 @@
 using System.Windows;
 using GitCheckoutManager.Models;
 using GitCheckoutManager.Services;
+using ThemeMode = GitCheckoutManager.Models.ThemeMode;
 using Microsoft.Win32;
 using Velopack;
 
