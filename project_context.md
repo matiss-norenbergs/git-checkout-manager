@@ -16,7 +16,7 @@ Two tabs:
 
 ## 2. Tech stack
 
-- .NET 8, WPF (`net8.0-windows`), MVVM with **CommunityToolkit.Mvvm** (`[ObservableProperty]`, `[RelayCommand]`)
+- .NET 10, WPF (`net10.0-windows`), MVVM with **CommunityToolkit.Mvvm** (`[ObservableProperty]`, `[RelayCommand]`)
 - `System.Text.Json`, `HttpClient` (host APIs only), `System.Security.Cryptography.ProtectedData` (DPAPI)
 - Git CLI is called through **one runner**, `IGitService.RunAsync`
 - **Velopack** handles installs and updates. The `Velopack` package version in `GitCheckoutManager.csproj` and the `vpk` tool version in `.github/workflows/release.yml` (`dotnet tool install -g vpk --version …`) must be bumped together. The csproj `<Version>` is overridden from the tag by the release workflow.

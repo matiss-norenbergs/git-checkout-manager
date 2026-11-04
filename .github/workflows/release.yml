@@ -13,6 +13,9 @@ on:
 permissions:
   contents: write
 
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
 jobs:
   release:
     runs-on: windows-latest
@@ -24,7 +27,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Determine version
         id: version
@@ -62,7 +65,7 @@ jobs:
         run: vpk download github --repoUrl https://github.com/${{ github.repository }}
 
       - name: Pack
-        run: vpk pack -u GitCheckoutManager --packTitle "Git Checkout Manager" -v ${{ steps.version.outputs.value }} -p publish --mainExe GitCheckoutManager.exe --framework net8.0-x64-desktop
+        run: vpk pack -u GitCheckoutManager --packTitle "Git Checkout Manager" -v ${{ steps.version.outputs.value }} -p publish --mainExe GitCheckoutManager.exe --framework net10.0-x64-desktop
 
       - name: Upload to GitHub Release
         run: vpk upload github --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "Git Checkout Manager ${{ steps.version.outputs.value }}" --tag v${{ steps.version.outputs.value }} --token ${{ secrets.GITHUB_TOKEN }}

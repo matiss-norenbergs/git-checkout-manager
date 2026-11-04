@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
 jobs:
   test:
     runs-on: windows-latest
@@ -13,7 +16,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Test
         run: dotnet test GitCheckoutManager.Tests/GitCheckoutManager.Tests.csproj --configuration Release

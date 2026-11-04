@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using System.Windows;
 using GitCheckoutManager.Models;
 using GitCheckoutManager.Services;
+using ThemeMode = GitCheckoutManager.Models.ThemeMode;
 
 namespace GitCheckoutManager.ViewModels
 {
